@@ -9,7 +9,7 @@ service cloud.firestore {
     // liberação de upload: o usuário grava a senha em uploadGrants/{uid};
     // a regra só aceita se o SHA-256 da senha bater com este hash.
     // Para trocar a senha: gere o novo hash (README) e substitua aqui E em assets/js/store-local.js.
-    function senhaOk(s) { return hashing.sha256(s).toBase64() == 'G/5D6kaldqW9gQ+cMx0B3pU6hfJY3Jm8wJEEwoNfWLw='; }
+    function senhaOk(s) { return hashing.sha256(s).toBase64() == 'mvFbM25qlhmShTffMLLmojdlafz51+dz7M7eZWBlKaA='; }
     function liberado() {
       return signedIn() && exists(/databases/$(database)/documents/uploadGrants/$(request.auth.uid))
         && get(/databases/$(database)/documents/uploadGrants/$(request.auth.uid)).data.at > request.time - duration.value(12, 'h');

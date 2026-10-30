@@ -27,7 +27,7 @@ export async function sha256b64(text) {
   return btoa(String.fromCharCode(...new Uint8Array(buf)));
 }
 // hash da senha de upload (a senha em si não fica no código)
-export const UPLOAD_HASH = 'G/5D6kaldqW9gQ+cMx0B3pU6hfJY3Jm8wJEEwoNfWLw=';
+export const UPLOAD_HASH = 'mvFbM25qlhmShTffMLLmojdlafz51+dz7M7eZWBlKaA=';
 const SESSION = 'eciclica-mat';
 const UNLOCK = 'eciclica-unlock';
 
