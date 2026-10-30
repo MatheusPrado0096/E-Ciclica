@@ -5,12 +5,12 @@
 // os dados ficam só no aparelho/navegador em uso.
 window.ECICLICA_CONFIG = {
   firebase: {
-    apiKey: "",
-    authDomain: "",
-    projectId: "",
-    storageBucket: "",
-    messagingSenderId: "",
-    appId: ""
+    apiKey: "AIzaSyCADBQzCtFLGd2ZtEpxuyyAXTEAaXvFDYA",
+    authDomain: "e-ciclica.firebaseapp.com",
+    projectId: "e-ciclica",
+    storageBucket: "e-ciclica.firebasestorage.app",
+    messagingSenderId: "918463779535",
+    appId: "1:918463779535:web:680a42e5a4fc6634e55dba"
   },
 
   // equipes que aparecem como botões no preenchimento (pode mudar no sistema, aba Documento, com a senha de upload)
