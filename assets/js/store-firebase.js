@@ -1,10 +1,13 @@
 // ===== E-Cíclica • armazenamento no FIREBASE (uso em equipe) =====
-// Auth (usuário + senha) e Firestore (documento do mês, preenchimentos e usuários).
-// Funciona offline: os preenchimentos ficam guardados no aparelho e sobem quando volta o sinal.
+// Entrada por matrícula (login anônimo do Firebase + cadastro nome/matrícula),
+// Firestore para documento do mês e preenchimentos. Funciona offline.
+// Upload/troca de documento exige a senha de upload (conferida pelas regras do servidor).
 
 const V = '10.12.2';
 const CDN = `https://www.gstatic.com/firebasejs/${V}/`;
 const CHUNK = 700000; // caracteres base64 por documento (limite do Firestore é ~1 MB)
+const SESSION = 'eciclica-mat';
+const UNLOCK = 'eciclica-unlock';
 
 function b64(bytes) {
   let s = ''; const step = 0x8000;
@@ -12,21 +15,15 @@ function b64(bytes) {
   return btoa(s);
 }
 function unb64(str) { const bin = atob(str); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
-const tag = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 
 function niceError(e) {
   const c = e?.code || '';
   const map = {
-    'auth/invalid-credential': 'Usuário ou senha incorretos.',
-    'auth/wrong-password': 'Usuário ou senha incorretos.',
-    'auth/user-not-found': 'Usuário ou senha incorretos.',
-    'auth/invalid-email': 'Usuário inválido.',
-    'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos e tente de novo.',
-    'auth/weak-password': 'A senha precisa ter pelo menos 6 caracteres.',
-    'auth/email-already-in-use': 'Esse login já existe.',
+    'auth/operation-not-allowed': 'Ative o login "Anônimo" no Firebase (Authentication → Método de login).',
+    'auth/admin-restricted-operation': 'Ative o login "Anônimo" no Firebase (Authentication → Método de login).',
     'auth/network-request-failed': 'Sem conexão com a internet.',
-    'auth/operation-not-allowed': 'Ative o login por "E-mail/senha" no Firebase (Authentication → Sign-in method).',
-    'permission-denied': 'Sem permissão. Confira as regras do Firestore (README) ou se o seu acesso está ativo.',
+    'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos.',
+    'permission-denied': 'Sem permissão. Confira as regras do Firestore (README).',
     'unavailable': 'Sem conexão com o servidor. Tente de novo.',
   };
   const err = new Error(map[c] || e?.message || String(e)); err.code = c; return err;
@@ -40,121 +37,82 @@ export async function createFirebaseStore(cfg) {
   const app = A.initializeApp(cfg.firebase);
   const auth = AU.getAuth(app);
   let fs;
-  try {
-    fs = F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }) });
-  } catch { fs = F.getFirestore(app); }
+  try { fs = F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }) }); }
+  catch { fs = F.getFirestore(app); }
   const d = (...p) => F.doc(fs, ...p);
   const col = (...p) => F.collection(fs, ...p);
-  const dom = cfg.dominioLogin || 'eciclica.app';
-  const emailFor = (u) => `${u}-${tag()}@${dom}`;
 
-  // app secundário: cria contas sem deslogar o administrador
-  let sec;
-  function secondary() {
-    if (!sec) {
-      const a2 = A.initializeApp(cfg.firebase, 'secundario');
-      sec = AU.initializeAuth(a2, { persistence: AU.inMemoryPersistence });
-    }
-    return sec;
+  async function ensureAuth() {
+    await auth.authStateReady?.();
+    if (!auth.currentUser) await AU.signInAnonymously(auth);
+    return auth.currentUser;
   }
-  async function newAccount(username, password) {
-    const s = secondary();
-    const cred = await AU.createUserWithEmailAndPassword(s, emailFor(username), password);
-    const uid = cred.user.uid; const email = cred.user.email;
-    await AU.signOut(s);
-    return { uid, email };
-  }
+  const getMat = () => { try { return localStorage.getItem(SESSION); } catch { return null; } };
+  const unlocked = () => { try { return sessionStorage.getItem(UNLOCK) === '1'; } catch { return false; } };
+  const needUnlock = () => { if (!unlocked()) throw new Error('Digite a senha de upload para continuar.'); };
 
-  let me = null; let authCb = () => {}; let busy = false;
-  async function handle(user) {
-    if (!user) { me = null; return authCb(null); }
+  let me = null; let authCb = () => {};
+  async function refreshMe() {
+    const mat = getMat();
+    if (!mat) { me = null; return authCb(null); }
     try {
-      const snap = await F.getDoc(d('users', user.uid));
-      const p = snap.exists() ? snap.data() : null;
-      if (!p || p.active === false || p.removed) {
-        await AU.signOut(auth); me = null;
-        return authCb(null, p ? 'Este acesso está desativado. Fale com o administrador.' : 'Usuário sem cadastro no sistema.');
-      }
-      me = { uid: user.uid, ...p }; authCb(me);
-    } catch (e) { authCb(null, niceError(e).message); }
+      await ensureAuth();
+      const s = await F.getDoc(d('users', mat));
+      me = s.exists() ? s.data() : null;
+      if (!me) { try { localStorage.removeItem(SESSION); } catch {} }
+      authCb(me);
+    } catch (e) { me = null; authCb(null, niceError(e).message); }
   }
-  const store = {
+
+  return {
     mode: 'firebase',
-    async init() {},
-    onAuth(cb) {
-      authCb = cb;
-      AU.onAuthStateChanged(auth, (user) => { if (!busy) handle(user); });
+    onAuth(cb) { authCb = cb; refreshMe(); },
+    lookup: wrap(async (mat) => { await ensureAuth(); const s = await F.getDoc(d('users', mat)); return s.exists() ? s.data() : null; }),
+    login: wrap(async (mat) => {
+      await ensureAuth();
+      if (!(await F.getDoc(d('users', mat))).exists()) throw new Error('Matrícula não cadastrada.');
+      try { localStorage.setItem(SESSION, mat); } catch {}
+      await refreshMe();
+    }),
+    register: wrap(async ({ nome, matricula, equipe }) => {
+      await ensureAuth();
+      const ref = d('users', matricula);
+      if ((await F.getDoc(ref)).exists()) throw new Error('Essa matrícula já está cadastrada.');
+      await F.setDoc(ref, { nome, matricula, equipe: equipe || '', createdAt: Date.now() });
+      try { localStorage.setItem(SESSION, matricula); } catch {}
+      await refreshMe();
+    }),
+    updateMe: wrap(async (patch) => { if (!me) return; await F.updateDoc(d('users', me.matricula), patch); await refreshMe(); }),
+    logout: wrap(async () => { try { localStorage.removeItem(SESSION); sessionStorage.removeItem(UNLOCK); } catch {} me = null; authCb(null); }),
+    listUsers: wrap(async () => (await F.getDocs(col('users'))).docs.map((s) => s.data())),
+
+    isUnlocked: unlocked,
+    // a senha é conferida pelas regras do Firestore (o servidor guarda só o hash)
+    unlock: wrap(async (senha) => {
+      const u = await ensureAuth();
+      try { await F.setDoc(d('uploadGrants', u.uid), { chave: senha, at: F.serverTimestamp() }); }
+      catch (e) { if (e.code === 'permission-denied') throw new Error('Senha incorreta.'); throw e; }
+      try { sessionStorage.setItem(UNLOCK, '1'); } catch {}
+    }),
+    lock() { try { sessionStorage.removeItem(UNLOCK); } catch {} },
+
+    getConfig: wrap(async () => { await ensureAuth(); return (await F.getDoc(d('config', 'app'))).data() || { activeCycle: null, equipes: cfg.equipes || [] }; }),
+    setConfig: wrap(async (patch) => { needUnlock(); await F.setDoc(d('config', 'app'), patch, { merge: true }); }),
+    watchConfig(cb) {
+      let un = () => {}; let dead = false;
+      ensureAuth().then(() => { if (!dead) un = F.onSnapshot(d('config', 'app'), (s) => cb(s.data() || { activeCycle: null, equipes: cfg.equipes || [] }), (e) => console.warn(e)); });
+      return () => { dead = true; un(); };
     },
-    needsBootstrap: wrap(async () => !(await F.getDoc(d('config', 'bootstrap'))).exists()),
-    bootstrap: wrap(async ({ name, username, password }) => {
-      busy = true;
-      try {
-        const cred = await AU.createUserWithEmailAndPassword(auth, emailFor(username), password);
-        const uid = cred.user.uid;
-        const b = F.writeBatch(fs);
-        b.set(d('users', uid), { name, username, role: 'admin', equipe: '', active: true, createdAt: F.serverTimestamp() });
-        b.set(d('logins', username), { email: cred.user.email, uid });
-        b.set(d('config', 'bootstrap'), { adminUid: uid, at: F.serverTimestamp() });
-        b.set(d('config', 'app'), { activeCycle: null, equipes: cfg.equipes || [] });
-        await b.commit();
-      } finally { busy = false; }
-      await handle(auth.currentUser);
-    }),
-    login: wrap(async (username, password) => {
-      const l = await F.getDoc(d('logins', username));
-      if (!l.exists()) throw new Error('Usuário ou senha incorretos.');
-      await AU.signInWithEmailAndPassword(auth, l.data().email, password);
-    }),
-    logout: wrap(async () => AU.signOut(auth)),
-    changePassword: wrap(async (oldPw, newPw) => {
-      const u = auth.currentUser;
-      await AU.reauthenticateWithCredential(u, AU.EmailAuthProvider.credential(u.email, oldPw));
-      await AU.updatePassword(u, newPw);
-    }),
-
-    listUsers: wrap(async () => (await F.getDocs(col('users')))
-      .docs.map((s) => ({ uid: s.id, ...s.data() })).filter((u) => !u.removed && !u.replacedBy)),
-    createUser: wrap(async ({ name, username, password, role, equipe }) => {
-      if ((await F.getDoc(d('logins', username))).exists()) throw new Error('Já existe um usuário com esse login.');
-      const { uid, email } = await newAccount(username, password);
-      const b = F.writeBatch(fs);
-      b.set(d('users', uid), { name, username, role, equipe: equipe || '', active: true, createdAt: F.serverTimestamp() });
-      b.set(d('logins', username), { email, uid });
-      await b.commit();
-    }),
-    updateUser: wrap(async (uid, patch) => F.updateDoc(d('users', uid), patch)),
-    // o Firebase não deixa um usuário trocar a senha de outro pelo navegador;
-    // então criamos uma conta nova com a nova senha e o mesmo login.
-    resetPassword: wrap(async (uid, pw) => {
-      const old = (await F.getDoc(d('users', uid))).data();
-      const { uid: nu, email } = await newAccount(old.username, pw);
-      const b = F.writeBatch(fs);
-      b.set(d('users', nu), { ...old, active: true, createdAt: F.serverTimestamp() });
-      b.update(d('users', uid), { active: false, replacedBy: nu });
-      b.set(d('logins', old.username), { email, uid: nu });
-      await b.commit();
-    }),
-    removeUser: wrap(async (uid) => {
-      const u = (await F.getDoc(d('users', uid))).data();
-      const b = F.writeBatch(fs);
-      b.update(d('users', uid), { active: false, removed: true });
-      if (u?.username) b.delete(d('logins', u.username));
-      await b.commit();
-    }),
-
-    getConfig: wrap(async () => (await F.getDoc(d('config', 'app'))).data() || { activeCycle: null, equipes: cfg.equipes || [] }),
-    setConfig: wrap(async (patch) => F.setDoc(d('config', 'app'), patch, { merge: true })),
-    watchConfig(cb) { return F.onSnapshot(d('config', 'app'), (s) => cb(s.data() || { activeCycle: null, equipes: cfg.equipes || [] }), (e) => console.warn(e)); },
 
     listCycles: wrap(async () => (await F.getDocs(col('cycles'))).docs.map((s) => ({ id: s.id, ...s.data() }))
       .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))),
     createCycle: wrap(async (meta, rows, bytes) => {
+      needUnlock();
       const id = (meta.ym || 'ciclo') + '-' + Date.now().toString(36);
       const groups = {};
       for (const r of rows) (groups[r.g] ||= []).push(r);
       const str = b64(bytes); const parts = [];
       for (let i = 0; i < str.length; i += CHUNK) parts.push(str.slice(i, i + CHUNK));
-      // grava em lotes pequenos (limite de 10 MB por envio)
       let b = F.writeBatch(fs); let size = 0;
       const flush = async () => { if (size) { await b.commit(); b = F.writeBatch(fs); size = 0; } };
       for (const [g, list] of Object.entries(groups)) {
@@ -163,10 +121,11 @@ export async function createFirebaseStore(cfg) {
       }
       await flush();
       for (let i = 0; i < parts.length; i++) { b.set(d('cycles', id, 'file', String(i)), { d: parts[i] }); size += parts[i].length; await flush(); }
-      await F.setDoc(d('cycles', id), { ...meta, parts: parts.length, createdAt: Date.now(), createdBy: me?.name || '' });
+      await F.setDoc(d('cycles', id), { ...meta, parts: parts.length, createdAt: Date.now(), createdBy: me?.nome || '' });
       return id;
     }),
     deleteCycle: wrap(async (id) => {
+      needUnlock();
       for (const sub of ['rows', 'file', 'fills']) {
         const s = await F.getDocs(col('cycles', id, sub));
         const b = F.writeBatch(fs); s.docs.forEach((x) => b.delete(x.ref)); await b.commit();
@@ -193,11 +152,9 @@ export async function createFirebaseStore(cfg) {
       for (const { k, g, fill } of list) (by[g] ||= {})[k] = fill ? fill : F.deleteField();
       const b = F.writeBatch(fs);
       for (const [g, obj] of Object.entries(by)) b.set(d('cycles', id, 'fills', g), obj, { merge: true });
-      // não espera o servidor: offline o lote fica na fila e sobe depois
-      const p = b.commit();
+      const p = b.commit(); // offline: fica na fila e sobe depois
       await Promise.race([p, new Promise((r) => setTimeout(r, 1500))]);
       p.catch((e) => console.warn('falha ao sincronizar', e));
     }),
   };
-  return store;
 }

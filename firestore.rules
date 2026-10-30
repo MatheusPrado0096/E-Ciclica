@@ -5,57 +5,46 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() { return request.auth != null; }
-    function profile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function isActive() {
-      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && profile().active == true;
-    }
-    function isAdmin() { return isActive() && profile().role == 'admin'; }
-    // primeiro acesso: só enquanto ainda não existe administrador
-    function bootstrapping() {
-      return signedIn()
-        && !exists(/databases/$(database)/documents/config/bootstrap)
-        && getAfter(/databases/$(database)/documents/config/bootstrap).data.adminUid == request.auth.uid;
+
+    // liberação de upload: o usuário grava a senha em uploadGrants/{uid};
+    // a regra só aceita se o SHA-256 da senha bater com este hash.
+    // Para trocar a senha: gere o novo hash (README) e substitua aqui E em assets/js/store-local.js.
+    function senhaOk(s) { return hashing.sha256(s).toBase64() == 'G/5D6kaldqW9gQ+cMx0B3pU6hfJY3Jm8wJEEwoNfWLw='; }
+    function liberado() {
+      return signedIn() && exists(/databases/$(database)/documents/uploadGrants/$(request.auth.uid))
+        && get(/databases/$(database)/documents/uploadGrants/$(request.auth.uid)).data.at > request.time - duration.value(12, 'h');
     }
 
-    match /config/bootstrap {
-      allow get: if true;
-      allow create: if bootstrapping();
+    match /uploadGrants/{uid} {
+      allow read: if false;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.chave is string && senhaOk(request.resource.data.chave)
+        && request.resource.data.at == request.time;
     }
+
+    // cadastro: nome + matrícula (todos iguais)
+    match /users/{mat} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.matricula == mat
+        && request.resource.data.nome is string && request.resource.data.nome.size() > 1;
+      allow update: if signedIn() && request.resource.data.matricula == resource.data.matricula;
+      allow delete: if liberado();
+    }
+
     match /config/app {
-      allow read: if isActive();
-      allow write: if isAdmin() || bootstrapping();
-    }
-
-    // login (usuário -> conta). Leitura pontual liberada para a tela de entrada.
-    match /logins/{username} {
-      allow get: if true;
-      allow list: if false;
-      allow write: if isAdmin() || bootstrapping();
-    }
-
-    match /users/{uid} {
-      allow read: if isActive() || (signedIn() && request.auth.uid == uid);
-      allow create: if isAdmin()
-        || (bootstrapping() && request.auth.uid == uid && request.resource.data.role == 'admin');
-      allow update, delete: if isAdmin();
+      allow read: if signedIn();
+      allow write: if liberado();
     }
 
     match /cycles/{cid} {
-      allow read: if isActive();
-      allow write: if isAdmin();
-
-      match /rows/{g} {
-        allow read: if isActive();
-        allow write: if isAdmin();
-      }
-      match /file/{n} {
-        allow read: if isActive();
-        allow write: if isAdmin();
-      }
-      // preenchimentos: qualquer usuário ativo preenche
+      allow read: if signedIn();
+      allow write: if liberado();
+      match /rows/{g} { allow read: if signedIn(); allow write: if liberado(); }
+      match /file/{n} { allow read: if signedIn(); allow write: if liberado(); }
+      // preenchimentos: qualquer pessoa cadastrada preenche; apagar o ciclo exige liberação
       match /fills/{g} {
-        allow read, write: if isActive();
+        allow read, create, update: if signedIn();
+        allow delete: if liberado();
       }
     }
   }

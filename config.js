@@ -13,10 +13,6 @@ window.ECICLICA_CONFIG = {
     appId: ""
   },
 
-  // domínio "de mentira" usado para transformar o usuário em e-mail no Firebase
-  // (ex.: matheus -> matheus-xxxx@eciclica.app). Não precisa existir.
-  dominioLogin: "eciclica.app",
-
-  // equipes que aparecem como botões no preenchimento (o admin pode mudar no sistema)
+  // equipes que aparecem como botões no preenchimento (pode mudar no sistema, aba Documento, com a senha de upload)
   equipes: ["2W", "2X", "2Y", "2Z", "2R"]
 };

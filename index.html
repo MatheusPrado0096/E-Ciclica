@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#00335e">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
 <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
-<link rel="manifest" href="manifest.webmanifest?v=1">
-<link rel="stylesheet" href="assets/css/style.css?v=1">
+<link rel="manifest" href="manifest.webmanifest?v=2">
+<link rel="stylesheet" href="assets/css/style.css?v=2">
 <script>
   try{var t=localStorage.getItem('eciclica-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t}catch(e){}
 </script>
@@ -45,6 +45,10 @@
     <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 10 5-10 5L2 7l10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></symbol>
     <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
   </defs>
 </svg>
@@ -61,22 +65,17 @@
       <div><span class="eyebrow">Logística • Plano de manutenção</span><h1>E-Cíclica</h1></div>
     </div>
 
-    <form id="loginForm" class="form" autocomplete="on">
-      <p class="lead">Entre para preencher a cíclica do mês.</p>
-      <label class="fl">Usuário<input id="lUser" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
-      <label class="fl">Senha<input id="lPass" name="password" type="password" autocomplete="current-password" required></label>
-      <button class="btn primary big" type="submit"><span>Entrar</span></button>
+    <form id="loginForm" class="form" autocomplete="on" novalidate>
+      <p class="lead" id="lLead">Informe sua matrícula para entrar.</p>
+      <label class="fl"><span>Matrícula</span><input id="lMat" name="matricula" inputmode="numeric" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="20" required placeholder="Ex.: 30016711"></label>
+      <div id="regFields" hidden>
+        <p class="hello" id="regHello"><b>Primeiro acesso?</b> Complete seu cadastro.</p>
+        <label class="fl"><span>Nome <i>*</i></span><input id="lNome" maxlength="60" autocomplete="name" placeholder="Seu nome"></label>
+        <div class="field"><span class="fl-l">Sua equipe <small class="muted">(opcional)</small></span><div class="chips" id="lEquipe" role="radiogroup" aria-label="Equipe"></div></div>
+      </div>
+      <button class="btn primary big" type="submit" id="lBtn"><span>Continuar</span></button>
+      <button class="btn ghost" type="button" id="lBack" hidden>Usar outra matrícula</button>
       <p class="err" id="loginErr" role="alert"></p>
-    </form>
-
-    <form id="bootForm" class="form" hidden autocomplete="off">
-      <p class="lead"><b>Primeiro acesso.</b> Crie o usuário <b>administrador</b> — ele troca o documento do mês e cadastra os funcionários.</p>
-      <label class="fl">Seu nome<input id="bName" required maxlength="60" placeholder="Ex.: Matheus Prado"></label>
-      <label class="fl">Usuário (login)<input id="bUser" required autocapitalize="none" spellcheck="false" pattern="[a-z0-9._\-]{3,30}" placeholder="ex.: matheus" title="3 a 30 letras minúsculas, números, ponto, traço"></label>
-      <label class="fl">Senha<input id="bPass" type="password" required minlength="6" autocomplete="new-password"></label>
-      <label class="fl">Repita a senha<input id="bPass2" type="password" required minlength="6" autocomplete="new-password"></label>
-      <button class="btn primary big" type="submit"><span>Criar administrador</span></button>
-      <p class="err" id="bootErr" role="alert"></p>
     </form>
 
     <p class="mode-note" id="modeNote" hidden></p>
@@ -99,7 +98,7 @@
 
   <div class="menu" id="meMenu" role="menu" hidden>
     <div class="menu-head"><b id="meName"></b><small id="meRole"></small></div>
-    <button role="menuitem" data-act="pw"><svg class="ic"><use href="#i-key"/></svg>Trocar minha senha</button>
+    <button role="menuitem" data-act="me"><svg class="ic"><use href="#i-user"/></svg>Meus dados</button>
     <button role="menuitem" data-act="out"><svg class="ic"><use href="#i-out"/></svg>Sair</button>
   </div>
 
@@ -108,10 +107,10 @@
     <button class="tab" role="tab" data-tab="ciclica"><svg class="ic"><use href="#i-list"/></svg><span>Cíclica</span></button>
     <button class="tab" role="tab" data-tab="painel"><svg class="ic"><use href="#i-chart"/></svg><span>Painel</span></button>
     <button class="tab" role="tab" data-tab="exportar"><svg class="ic"><use href="#i-download"/></svg><span>Exportar</span></button>
-    <button class="tab admin-only" role="tab" data-tab="admin"><svg class="ic"><use href="#i-gear"/></svg><span>Admin</span></button>
+    <button class="tab" role="tab" data-tab="documento"><svg class="ic"><use href="#i-file"/></svg><span>Documento</span></button>
   </nav>
 
-  <div class="local-banner" id="localBanner" hidden><svg class="ic"><use href="#i-info"/></svg><span><b>Modo local (demonstração).</b> Os dados ficam só neste navegador. Para a equipe usar junto, configure o Firebase no <code>config.js</code> (veja o README).</span></div>
+  <div class="local-banner" id="localBanner" hidden><svg class="ic"><use href="#i-info"/></svg><span><b>Modo local (demonstração).</b> Os dados ficam só neste navegador. Para a equipe usar junto, configure o Firebase no <code>config.js</code> (veja o README).</span><button class="lb-x" id="lbX" aria-label="Fechar aviso"><svg class="ic"><use href="#i-x"/></svg></button></div>
 
   <main id="main">
     <!-- CÍCLICA -->
@@ -126,7 +125,7 @@
         </div>
       </div>
 
-      <div class="nocycle empty" id="noCycle" hidden><b>Nenhum documento ativo</b><span id="noCycleMsg">O administrador ainda não enviou a planilha deste mês.</span></div>
+      <div class="nocycle empty" id="noCycle" hidden><b>Nenhum documento ativo</b><span id="noCycleMsg">Envie a planilha do mês na aba Documento.</span></div>
 
       <div id="listWrap">
         <div class="toolbar">
@@ -135,9 +134,9 @@
             <input id="q" type="search" inputmode="search" autocomplete="off" spellcheck="false" placeholder="OS, ativo, serviço ou colaborador…" aria-label="Pesquisar">
             <button class="icon-btn small" id="qClear" aria-label="Limpar pesquisa" hidden><svg class="ic"><use href="#i-x"/></svg></button>
           </div>
+          <button class="picker" id="patioBtn" aria-haspopup="dialog"><svg class="ic"><use href="#i-pin"/></svg><span><small>Pátio</small><b id="patioLbl">Todos</b></span><svg class="ic chev"><use href="#i-down"/></svg></button>
           <button class="btn sel-toggle" id="selToggle" aria-pressed="false"><svg class="ic"><use href="#i-checks"/></svg><span>Selecionar</span></button>
         </div>
-        <div class="chips scroll" id="patioChips" role="group" aria-label="Filtrar por pátio"></div>
         <div class="chips" id="statusChips" role="group" aria-label="Filtrar por situação"></div>
         <div class="chips" id="abaChips" role="group" aria-label="Filtrar por aba" hidden></div>
         <p class="muted count" id="count" aria-live="polite"></p>
@@ -148,8 +147,28 @@
 
     <!-- PAINEL -->
     <section id="painel" class="panel" role="tabpanel" hidden>
-      <div class="section-head"><div><span class="eyebrow">Acompanhamento</span><h2 id="pTitle">Painel</h2></div><span class="muted" id="pSub"></span></div>
-      <div class="dash" id="dash"></div>
+      <div class="section-head"><div><span class="eyebrow">Monitoramento do plano</span><h2 id="pTitle">Painel</h2></div></div>
+      <button class="filt-btn" id="dFiltBtn" aria-expanded="false" aria-controls="dFilters"><svg class="ic"><use href="#i-search"/></svg><span id="dFiltSum">Filtros</span><span class="n" id="dFiltN"></span><svg class="ic chev"><use href="#i-down"/></svg></button>
+      <div class="filters" id="dFilters">
+        <label class="sel"><span>Período</span><select id="dPer">
+          <option value="all">Todo o período</option><option value="today">Hoje</option><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="custom">Personalizado…</option></select></label>
+        <label class="sel" id="dFromW" hidden><span>De</span><input type="date" id="dFrom"></label>
+        <label class="sel" id="dToW" hidden><span>Até</span><input type="date" id="dTo"></label>
+        <label class="sel"><span>Pátio</span><select id="dPatio"></select></label>
+        <label class="sel"><span>Equipe</span><select id="dEq"></select></label>
+        <label class="sel"><span>Colaborador</span><select id="dCol"></select></label>
+        <button class="btn ghost small-btn" id="dClear" hidden><svg class="ic"><use href="#i-x"/></svg><span>Limpar</span></button>
+      </div>
+      <div class="subnav" id="dNav" role="tablist" aria-label="Visões do painel">
+        <button role="tab" data-v="geral" aria-selected="true">Visão geral</button>
+        <button role="tab" data-v="patios" aria-selected="false">Pátios</button>
+        <button role="tab" data-v="equipes" aria-selected="false">Equipes</button>
+        <button role="tab" data-v="pessoas" aria-selected="false">Colaboradores</button>
+        <button role="tab" data-v="atencao" aria-selected="false">Atenção</button>
+        <button role="tab" data-v="atividade" aria-selected="false">Atividade</button>
+      </div>
+      <div id="dash"></div>
+      <div class="tip" id="tip" hidden></div>
     </section>
 
     <!-- EXPORTAR -->
@@ -167,16 +186,19 @@
       </div>
     </section>
 
-    <!-- ADMIN -->
-    <section id="admin" class="panel" role="tabpanel" hidden>
-      <div class="section-head"><div><span class="eyebrow">Administrador</span><h2>Gerenciar</h2></div></div>
-      <div class="chips" id="adminChips" role="group" aria-label="Seções do administrador">
-        <button class="chip" data-sub="doc" aria-pressed="true"><svg class="ic"><use href="#i-file"/></svg>Documento do mês</button>
-        <button class="chip" data-sub="users" aria-pressed="false"><svg class="ic"><use href="#i-users"/></svg>Usuários</button>
-        <button class="chip" data-sub="equipes" aria-pressed="false"><svg class="ic"><use href="#i-layers"/></svg>Equipes</button>
-      </div>
+    <!-- DOCUMENTO -->
+    <section id="documento" class="panel" role="tabpanel" hidden>
+      <div class="section-head"><div><span class="eyebrow">Documento do mês</span><h2>Cíclicas enviadas</h2></div>
+        <button class="btn ghost lock-btn" id="lockBtn" hidden><svg class="ic"><use href="#i-lock"/></svg><span>Bloquear</span></button></div>
 
-      <div data-subp="doc">
+      <form class="card pad unlock" id="unlockForm" autocomplete="off">
+        <span class="unlock-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
+        <div class="unlock-tx"><b>Área protegida</b><span class="muted">Para enviar, ativar ou excluir documentos e editar as equipes, digite a senha de upload.</span></div>
+        <div class="inline-add"><input type="password" id="upPass" placeholder="Senha de upload" autocomplete="off" required><button class="btn primary" type="submit"><span>Liberar</span></button></div>
+        <p class="err" id="upErr" role="alert"></p>
+      </form>
+
+      <div id="manage" hidden>
         <label class="drop" id="drop">
           <input type="file" id="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
           <span class="drop-ic"><svg class="ic"><use href="#i-upload"/></svg></span>
@@ -184,32 +206,12 @@
           <span class="muted">Toque para escolher ou arraste o arquivo aqui. O sistema passa a seguir o novo documento.</span>
         </label>
         <div id="preview"></div>
-        <h3 class="sub-title">Documentos enviados</h3>
-        <div id="cycles" class="stack"></div>
       </div>
 
-      <div data-subp="users" hidden>
-        <form class="card pad form inline-form" id="userForm" autocomplete="off">
-          <b class="form-title"><svg class="ic"><use href="#i-plus"/></svg>Novo usuário</b>
-          <div class="row2">
-            <label class="fl">Nome<input id="uName" required maxlength="60" placeholder="Nome do funcionário"></label>
-            <label class="fl">Usuário (login)<input id="uUser" required autocapitalize="none" spellcheck="false" pattern="[a-z0-9._\-]{3,30}" placeholder="ex.: jajan" title="3 a 30 letras minúsculas, números, ponto, traço"></label>
-          </div>
-          <div class="row2">
-            <label class="fl">Senha inicial<input id="uPass" required minlength="6" placeholder="mín. 6 caracteres"></label>
-            <label class="fl">Equipe<select id="uEquipe"></select></label>
-          </div>
-          <div class="seg" id="uRole" role="radiogroup" aria-label="Perfil">
-            <button type="button" role="radio" data-v="func" aria-checked="true">Funcionário</button>
-            <button type="button" role="radio" data-v="admin" aria-checked="false">Administrador</button>
-          </div>
-          <button class="btn primary" type="submit"><svg class="ic"><use href="#i-plus"/></svg><span>Cadastrar</span></button>
-          <p class="err" id="userErr" role="alert"></p>
-        </form>
-        <div id="users" class="stack"></div>
-      </div>
+      <div id="cycles" class="stack"></div>
 
-      <div data-subp="equipes" hidden>
+      <div id="eqWrap" hidden>
+        <h3 class="sub-title">Equipes</h3>
         <div class="card pad">
           <p class="muted">Equipes que aparecem como botões na hora de preencher.</p>
           <div class="chips eq-edit" id="eqList"></div>
@@ -290,6 +292,20 @@
   </form>
 </div>
 
+<!-- seletor de pátio -->
+<div class="sheet" id="pSheet" role="dialog" aria-modal="true" aria-labelledby="pShTitle" hidden>
+  <div class="sheet-back" data-pclose></div>
+  <div class="sheet-card">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="sheet-head"><div class="sh-tx"><span class="eyebrow">Filtrar</span><h2 id="pShTitle">Escolha o pátio</h2></div>
+      <button class="icon-btn small" type="button" data-pclose aria-label="Fechar"><svg class="ic"><use href="#i-x"/></svg></button></div>
+    <div class="sheet-body">
+      <div class="searchbox slim"><svg class="ic"><use href="#i-search"/></svg><input id="pQ" type="search" autocomplete="off" spellcheck="false" placeholder="Pesquisar pátio (ex.: FPI)…" aria-label="Pesquisar pátio"></div>
+      <div class="plist" id="pList"></div>
+    </div>
+  </div>
+</div>
+
 <!-- diálogo genérico -->
 <div class="sheet dlg" id="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgTitle" hidden>
   <div class="sheet-back" data-dclose></div>
@@ -303,9 +319,9 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.js?v=1"></script>
+<script src="config.js?v=2"></script>
 <script src="assets/vendor/jszip.min.js"></script>
-<script type="module" src="assets/js/app.js?v=1"></script>
+<script type="module" src="assets/js/app.js?v=2"></script>
 <noscript><p style="padding:24px;font-family:sans-serif">Ative o JavaScript para usar o E-Cíclica.</p></noscript>
 </body>
 </html>

@@ -2,7 +2,7 @@
 // Tudo fica no IndexedDB deste navegador. Serve para testar o sistema
 // sem configurar o Firebase. Para uso em equipe, configure o Firebase (config.js).
 
-const DB = 'eciclica-local';
+const DB = 'eciclica-local2';
 let dbp;
 function db() {
   if (!dbp) dbp = new Promise((res, rej) => {
@@ -22,83 +22,71 @@ function emit(topic) { subs.forEach((s) => s.topic === topic && s.fn()); bc?.pos
 bc && (bc.onmessage = (e) => subs.forEach((s) => s.topic === e.data && s.fn()));
 function on(topic, fn) { const s = { topic, fn }; subs.add(s); return () => subs.delete(s); }
 
-async function hash(pw, salt) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + '::' + pw));
-  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+export async function sha256b64(text) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return btoa(String.fromCharCode(...new Uint8Array(buf)));
 }
-const rid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-const SESSION = 'eciclica-session';
-const pub = (u) => u && ({ uid: u.uid, name: u.name, username: u.username, role: u.role, equipe: u.equipe || '', active: u.active !== false });
+// hash da senha de upload (a senha em si não fica no código)
+export const UPLOAD_HASH = 'G/5D6kaldqW9gQ+cMx0B3pU6hfJY3Jm8wJEEwoNfWLw=';
+const SESSION = 'eciclica-mat';
+const UNLOCK = 'eciclica-unlock';
 
 export function createLocalStore(cfg) {
   let authCb = () => {}; let me = null;
-  const users = async () => (await get('users')) || [];
-
+  const users = async () => (await get('users')) || {};
   async function refreshMe() {
-    let uid = null; try { uid = localStorage.getItem(SESSION); } catch {}
-    const u = uid && (await users()).find((x) => x.uid === uid && x.active !== false && !x.removed);
-    me = u ? pub(u) : null; authCb(me);
+    let mat = null; try { mat = localStorage.getItem(SESSION); } catch {}
+    const u = mat && (await users())[mat];
+    me = u || null; authCb(me);
   }
+  const unlocked = () => { try { return sessionStorage.getItem(UNLOCK) === '1'; } catch { return false; } };
+  const needUnlock = () => { if (!unlocked()) throw new Error('Digite a senha de upload para continuar.'); };
 
   return {
     mode: 'local',
-    async init() {},
     onAuth(cb) { authCb = cb; refreshMe(); },
-    async needsBootstrap() { return !(await users()).some((u) => u.role === 'admin' && !u.removed); },
-    async bootstrap({ name, username, password }) {
-      if (!(await this.needsBootstrap())) throw new Error('O administrador já foi criado.');
-      const salt = rid();
-      const u = { uid: rid(), name, username, role: 'admin', equipe: '', active: true, salt, hash: await hash(password, salt) };
-      await put('users', [...(await users()), u]);
-      await put('config', { activeCycle: null, equipes: cfg.equipes || [] });
-      try { localStorage.setItem(SESSION, u.uid); } catch {}
+    async lookup(mat) { return (await users())[mat] || null; },
+    async login(mat) {
+      const u = (await users())[mat]; if (!u) throw new Error('Matrícula não cadastrada.');
+      try { localStorage.setItem(SESSION, mat); } catch {}
       await refreshMe();
     },
-    async login(username, password) {
-      const u = (await users()).find((x) => x.username === username && !x.removed);
-      if (!u || (await hash(password, u.salt)) !== u.hash) throw new Error('Usuário ou senha incorretos.');
-      if (u.active === false) throw new Error('Este acesso está desativado. Fale com o administrador.');
-      try { localStorage.setItem(SESSION, u.uid); } catch {}
-      await refreshMe();
+    async register({ nome, matricula, equipe }) {
+      const all = await users();
+      if (all[matricula]) throw new Error('Essa matrícula já está cadastrada.');
+      all[matricula] = { nome, matricula, equipe: equipe || '', createdAt: Date.now() };
+      await put('users', all); emit('users');
+      await this.login(matricula);
     },
-    async logout() { try { localStorage.removeItem(SESSION); } catch {} me = null; authCb(null); },
-    async changePassword(oldPw, newPw) {
-      const list = await users(); const u = list.find((x) => x.uid === me?.uid);
-      if (!u || (await hash(oldPw, u.salt)) !== u.hash) throw new Error('Senha atual incorreta.');
-      u.salt = rid(); u.hash = await hash(newPw, u.salt); await put('users', list);
+    async updateMe(patch) {
+      const all = await users(); if (!me) return;
+      Object.assign(all[me.matricula], patch); await put('users', all); emit('users'); await refreshMe();
     },
-    async listUsers() { return (await users()).filter((u) => !u.removed).map(pub); },
-    async createUser({ name, username, password, role, equipe }) {
-      const list = await users();
-      if (list.some((u) => u.username === username && !u.removed)) throw new Error('Já existe um usuário com esse login.');
-      const salt = rid();
-      list.push({ uid: rid(), name, username, role, equipe, active: true, salt, hash: await hash(password, salt) });
-      await put('users', list); emit('users');
+    async logout() { try { localStorage.removeItem(SESSION); sessionStorage.removeItem(UNLOCK); } catch {} me = null; authCb(null); },
+    async listUsers() { return Object.values(await users()); },
+
+    isUnlocked: unlocked,
+    async unlock(senha) {
+      if ((await sha256b64(senha)) !== UPLOAD_HASH) throw new Error('Senha incorreta.');
+      try { sessionStorage.setItem(UNLOCK, '1'); } catch {}
     },
-    async updateUser(uid, patch) {
-      const list = await users(); const u = list.find((x) => x.uid === uid); if (!u) return;
-      Object.assign(u, patch); await put('users', list); emit('users');
-      if (uid === me?.uid) refreshMe();
-    },
-    async resetPassword(uid, pw) {
-      const list = await users(); const u = list.find((x) => x.uid === uid); if (!u) return;
-      u.salt = rid(); u.hash = await hash(pw, u.salt); await put('users', list);
-    },
-    async removeUser(uid) { await this.updateUser(uid, { removed: true, active: false }); },
+    lock() { try { sessionStorage.removeItem(UNLOCK); } catch {} },
 
     async getConfig() { return (await get('config')) || { activeCycle: null, equipes: cfg.equipes || [] }; },
-    async setConfig(patch) { await put('config', { ...(await this.getConfig()), ...patch }); emit('config'); },
+    async setConfig(patch) { needUnlock(); await put('config', { ...(await this.getConfig()), ...patch }); emit('config'); },
     watchConfig(cb) { const f = async () => cb(await this.getConfig()); f(); return on('config', f); },
 
     async listCycles() { return ((await get('cycles')) || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)); },
     async createCycle(meta, rows, bytes) {
+      needUnlock();
       const id = (meta.ym || 'ciclo') + '-' + Date.now().toString(36);
       await put('rows:' + id, rows); await put('file:' + id, bytes); await put('fills:' + id, {});
-      const c = { ...meta, id, createdAt: Date.now(), createdBy: me?.name || '' };
+      const c = { ...meta, id, createdAt: Date.now(), createdBy: me?.nome || '' };
       await put('cycles', [...(await this.listCycles()), c]); emit('cycles');
       return id;
     },
     async deleteCycle(id) {
+      needUnlock();
       await del('rows:' + id); await del('file:' + id); await del('fills:' + id);
       await put('cycles', (await this.listCycles()).filter((c) => c.id !== id)); emit('cycles');
     },
