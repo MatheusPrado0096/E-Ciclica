@@ -1,0 +1,62 @@
+rules_version = '2';
+// ===== E-Cíclica • regras de segurança do Firestore =====
+// Cole este arquivo inteiro em: Firebase → Firestore Database → Regras → Publicar.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function profile() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isActive() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && profile().active == true;
+    }
+    function isAdmin() { return isActive() && profile().role == 'admin'; }
+    // primeiro acesso: só enquanto ainda não existe administrador
+    function bootstrapping() {
+      return signedIn()
+        && !exists(/databases/$(database)/documents/config/bootstrap)
+        && getAfter(/databases/$(database)/documents/config/bootstrap).data.adminUid == request.auth.uid;
+    }
+
+    match /config/bootstrap {
+      allow get: if true;
+      allow create: if bootstrapping();
+    }
+    match /config/app {
+      allow read: if isActive();
+      allow write: if isAdmin() || bootstrapping();
+    }
+
+    // login (usuário -> conta). Leitura pontual liberada para a tela de entrada.
+    match /logins/{username} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if isAdmin() || bootstrapping();
+    }
+
+    match /users/{uid} {
+      allow read: if isActive() || (signedIn() && request.auth.uid == uid);
+      allow create: if isAdmin()
+        || (bootstrapping() && request.auth.uid == uid && request.resource.data.role == 'admin');
+      allow update, delete: if isAdmin();
+    }
+
+    match /cycles/{cid} {
+      allow read: if isActive();
+      allow write: if isAdmin();
+
+      match /rows/{g} {
+        allow read: if isActive();
+        allow write: if isAdmin();
+      }
+      match /file/{n} {
+        allow read: if isActive();
+        allow write: if isAdmin();
+      }
+      // preenchimentos: qualquer usuário ativo preenche
+      match /fills/{g} {
+        allow read, write: if isActive();
+      }
+    }
+  }
+}
