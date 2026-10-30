@@ -757,3 +757,5 @@ button.kpi:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
   .rtab td:nth-child(1) br{display:none}
   .rtab td:nth-child(1) .segb{margin-left:6px}
 }
+/* pendente automático (ninguém preencheu ainda): contorno */
+.st.pe.auto{background:transparent;border:2px solid var(--pe);color:var(--pe)}

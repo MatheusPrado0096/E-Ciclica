@@ -1,6 +1,6 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, norm } from './xlsx.js?v=6';
-import { createLocalStore } from './store-local.js?v=6';
+import { parseWorkbook, buildRows, exportWorkbook, norm } from './xlsx.js?v=7';
+import { createLocalStore } from './store-local.js?v=7';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -81,7 +81,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js?v=6');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=7');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {
@@ -221,8 +221,9 @@ $('#meMenu').addEventListener('click', async (e) => {
 });
 
 // ---------- cálculo ----------
-function statusOf(k) { const f = S.fills[k]; return !f ? 'none' : f.ok === 'EXECUTADO' ? 'ok' : 'pe'; }
-function counts(rows) { const c = { total: rows.length, ok: 0, pe: 0, none: 0 }; for (const r of rows) c[statusOf(r.k)]++; return c; }
+// só existem dois estados: o que não foi executado é PENDENTE (inclusive o que ninguém preencheu)
+function statusOf(k) { return S.fills[k]?.ok === 'EXECUTADO' ? 'ok' : 'pe'; }
+function counts(rows) { const c = { total: rows.length, ok: 0, pe: 0 }; for (const r of rows) c[statusOf(r.k)]++; return c; }
 
 // ---------- render geral ----------
 function renderAll(fillsOnly) {
@@ -240,13 +241,13 @@ function renderHero() {
   const c = counts(S.rows); const t = c.total || 1;
   $('.p-ex').style.width = (c.ok / t) * 100 + '%'; $('.p-pe').style.width = (c.pe / t) * 100 + '%';
   const st = (cls, n, l, f) => `<button class="stat ${cls}" data-st="${f}"><dt>${l}</dt><dd>${n}</dd></button>`;
-  $('#cStats').innerHTML = st('', c.total, 'OS no mês', 'todas') + st('s-ok', c.ok, 'Executadas', 'ok') + st('s-pe', c.pe, 'Pendentes', 'pe') + st('s-none', c.none, 'Sem preencher', 'none');
+  $('#cStats').innerHTML = st('', c.total, 'OS no mês', 'todas') + st('s-ok', c.ok, 'Executadas', 'ok') + st('s-pe', c.pe, 'Pendentes', 'pe') + `<div class="stat s-none"><dt>Concluído</dt><dd>${Math.round((c.ok / t) * 100)}%</dd></div>`;
 }
 $('#cStats').addEventListener('click', (e) => { const b = e.target.closest('[data-st]'); if (b) { S.f.status = b.dataset.st; renderChips(); renderList(); $('#listWrap').scrollIntoView({ behavior: 'smooth' }); } });
 
 function patios() {
   const m = new Map();
-  for (const r of S.rows) { const o = m.get(r.patio) || { n: 0, done: 0 }; o.n++; if (S.fills[r.k]) o.done++; m.set(r.patio, o); }
+  for (const r of S.rows) { const o = m.get(r.patio) || { n: 0, done: 0 }; o.n++; if (statusOf(r.k) === 'ok') o.done++; m.set(r.patio, o); }
   return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 function renderChips() {
@@ -255,7 +256,7 @@ function renderChips() {
   $('#patioLbl').textContent = S.f.patio || 'Todos';
   $('#patioBtn').classList.toggle('on', !!S.f.patio);
   const chip = (attr, v, label, n, on) => `<button class="chip" data-${attr}="${h(v)}" aria-pressed="${on}">${h(label)}${n != null ? `<small>${n}</small>` : ''}</button>`;
-  const sts = [['todas', 'Todas'], ['none', 'Sem preencher'], ['ok', 'Executadas'], ['pe', 'Pendentes']];
+  const sts = [['todas', 'Todas'], ['ok', 'Executadas'], ['pe', 'Pendentes']];
   $('#statusChips').innerHTML = sts.map(([v, l]) => chip('status', v, l, null, S.f.status === v)).join('') +
     `<button class="chip chip-seg" data-segf aria-pressed="${!!S.f.seg}">${ICON('shield')}Só segurança</button>`;
   $('#abaChips').hidden = ac.size < 2;
@@ -276,7 +277,7 @@ function renderPList() {
     const pct = n ? Math.round((done / n) * 100) : 0;
     return `<button class="pitem${S.f.patio === v ? ' on' : ''}" data-pv="${h(v)}"><b>${h(label)}</b><span class="pbar"><i style="width:${pct}%"></i></span><small>${done}/${n}</small>${S.f.patio === v ? ICON('check') : ''}</button>`;
   };
-  const tot = S.rows.length; const done = S.rows.filter((r) => S.fills[r.k]).length;
+  const tot = S.rows.length; const done = S.rows.filter((r) => statusOf(r.k) === 'ok').length;
   $('#pList').innerHTML = (q ? '' : item('', 'Todos os pátios', tot, done)) + all.map(([p, o]) => item(p, p, o.n, o.done)).join('') ||
     '<p class="muted" style="padding:16px">Nenhum pátio com esse nome.</p>';
 }
@@ -318,7 +319,7 @@ const PAGE = 80;
 function renderList(keepScroll) {
   S.filtered = applyFilters();
   const c = counts(S.filtered);
-  $('#count').textContent = `${S.filtered.length === S.rows.length ? S.rows.length + ' OS' : S.filtered.length + ' de ' + S.rows.length + ' OS'} • ${c.ok} executadas • ${c.pe} pendentes • ${c.none} sem preencher`;
+  $('#count').textContent = `${S.filtered.length === S.rows.length ? S.rows.length + ' OS' : S.filtered.length + ' de ' + S.rows.length + ' OS'} • ${c.ok} executadas • ${c.pe} pendentes`;
   const want = keepScroll ? Math.max(S.shown, PAGE) : PAGE;
   S.shown = 0; $('#list').innerHTML = '';
   if (!S.filtered.length && S.rows.length) $('#list').innerHTML = '<div class="empty"><b>Nada encontrado</b><span>Ajuste a pesquisa ou os filtros.</span></div>';
@@ -332,7 +333,7 @@ function itemHtml(r) {
     (f.colab ? `<span>${hi(f.colab)}</span>` : '') + (f.equipe ? `<span>${h(f.equipe)}</span>` : '') : `<span>${hi(r.desc)}</span>`;
   return `<button class="it${on ? ' sel' : ''}" data-k="${h(r.k)}">
     <span class="cb${on ? ' on' : ''}">${ICON('check')}</span>
-    <span class="st ${st === 'none' ? '' : st}">${st === 'ok' ? ICON('check') : st === 'pe' ? ICON('clock') : ''}</span>
+    <span class="st ${st}${f ? '' : ' auto'}">${st === 'ok' ? ICON('check') : ICON('clock')}</span>
     <span class="it-main"><span class="it-sv">${hi(r.servico || r.desc)}</span><span class="it-meta">${meta}</span></span>
     <span class="it-os">${hi(r.os)}${isSeg(r) ? '<span class="segb">SEG</span>' : ''}</span></button>`;
 }
@@ -348,7 +349,7 @@ function renderMore(n = PAGE) {
 }
 function groupStats(g) {
   const all = S.filtered.filter((r) => gk(r) === g);
-  return { n: all.length, done: all.filter((r) => S.fills[r.k]).length, sel: all.filter((r) => S.sel.has(r.k)).length };
+  return { n: all.length, done: all.filter((r) => statusOf(r.k) === 'ok').length, sel: all.filter((r) => S.sel.has(r.k)).length };
 }
 function groupHtml(r, g, items) {
   const s = groupStats(g);
@@ -527,7 +528,7 @@ $('#fillForm').addEventListener('submit', async (e) => {
 });
 $('#fClear').addEventListener('click', async () => {
   const n = FK.filter((k) => S.fills[k]).length;
-  const ok = await dialog({ title: 'Limpar preenchimento?', html: `<p>Apaga o preenchimento de <b>${n}</b> OS. Elas voltam para “sem preencher”.</p>`, yes: 'Limpar', danger: true });
+  const ok = await dialog({ title: 'Limpar preenchimento?', html: `<p>Apaga o preenchimento de <b>${n}</b> OS. Elas voltam a ficar pendentes, sem dia, horário nem colaboradores.</p>`, yes: 'Limpar', danger: true });
   if (!ok) return;
   try { await S.store.saveFills(S.cycle.id, FK.filter((k) => S.fills[k]).map((k) => ({ k, g: S.byK.get(k).g, fill: null }))); toast('Preenchimento apagado.'); if (FK.length > 1) setSelecting(false); closeSheet(); }
   catch (err) { $('#fErr').textContent = err.message; }
@@ -632,10 +633,12 @@ function statusParts(rows, items) {
   const its = items.filter((x) => set.has(x.r.k));
   const ok = its.filter((x) => x.f.ok === 'EXECUTADO').length; const pe = its.length - ok;
   const pf = personFilter();
-  const rest = pf ? rows.length - its.length : rows.filter((r) => !S.fills[r.k]).length;
+  // sem filtro de pessoa/período: tudo que não foi executado é pendente
+  if (!pf) { const p2 = rows.length - ok; return { ok, pe: p2, rest: 0, total: rows.length, parts: [{ v: ok, c: 'var(--c-ok)', l: 'Executadas' }, { v: p2, c: 'var(--c-pe)', l: 'Pendentes' }] }; }
+  const rest = rows.length - its.length;
   return { ok, pe, rest, total: rows.length, parts: [
-    { v: ok, c: 'var(--c-ok)', l: 'Executadas' }, { v: pe, c: 'var(--c-pe)', l: 'Pendentes' },
-    { v: rest, c: 'var(--c-none)', l: pf ? 'Demais OS (fora do filtro)' : 'Sem preencher' }] };
+    { v: ok, c: 'var(--c-ok)', l: 'Executadas (no filtro)' }, { v: pe, c: 'var(--c-pe)', l: 'Pendentes (no filtro)' },
+    { v: rest, c: 'var(--c-none)', l: 'Demais OS (fora do filtro)' }] };
 }
 function viewGeral({ rows, items }) {
   const all = statusParts(rows, items); const seg = statusParts(rows.filter(isSeg), items);
@@ -653,7 +656,7 @@ function viewPatios({ rows, items }) {
   const list = [...by.entries()].map(([p, rs]) => [p, statusParts(rs, items), statusParts(rs.filter(isSeg), items)])
     .sort((a, b) => b[1].ok / b[1].total - a[1].ok / a[1].total || a[0].localeCompare(b[0]));
   return `<div class="card pad"><div class="card-t"><b>OS realizadas por pátio</b><span class="muted small">toque para abrir a lista</span></div>
-    ${legend(list.length ? [{ v: list.reduce((a, x) => a + x[1].ok, 0), c: 'var(--c-ok)', l: 'Executadas' }, { v: list.reduce((a, x) => a + x[1].pe, 0), c: 'var(--c-pe)', l: 'Pendentes' }, { v: list.reduce((a, x) => a + x[1].rest, 0), c: 'var(--c-none)', l: personFilter() ? 'Demais OS' : 'Sem preencher' }] : [], rows.length).replace('class="pleg"', 'class="pleg inline"')}
+    ${legend(list.length ? [{ v: list.reduce((a, x) => a + x[1].ok, 0), c: 'var(--c-ok)', l: 'Executadas' }, { v: list.reduce((a, x) => a + x[1].pe, 0), c: 'var(--c-pe)', l: 'Pendentes' }, ...(personFilter() ? [{ v: list.reduce((a, x) => a + x[1].rest, 0), c: 'var(--c-none)', l: 'Demais OS' }] : [])] : [], rows.length).replace('class="pleg"', 'class="pleg inline"')}
     <div class="mini-grid">${list.map(([p, st, sg]) => `<button class="mini" data-p="${h(p)}">${pie(st.parts, { size: 92, hole: 0.6, center: pctTxt(st.ok, st.total) })}
       <b>${h(p)}</b><small>${st.ok}/${st.total} realizadas</small><small class="segs">${ICON('shield')}${sg.total ? `${sg.ok}/${sg.total} seg.` : 'sem OS seg.'}</small></button>`).join('')}</div></div>`;
 }
@@ -785,7 +788,7 @@ $('#rXlsx').addEventListener('click', async () => {
     ['PÁTIO', 'ATIVO', 'OS', 'SERVIÇO', 'DESCRIÇÃO', 'SEGURANÇA', 'OK', 'H INÍCIO', 'H FIM', 'MANUT. IMEDIATA', 'NECESSIDADE', 'COLABORADORES', 'MATRÍCULAS', 'EQUIPE']];
   const headRow = rows.length - 1;
   for (const { r, f } of items) { const t = tokensOf(f); rows.push([r.patio, r.ativo, r.os, r.servico, r.desc, isSeg(r) ? 'SIM' : '', f.ok, f.hIni || '', f.hFim || '', f.imediata || '', f.necessidade || '', t.map((c) => c.n).join(', '), t.map((c) => c.m || '-').join(', '), f.equipe || '']); }
-  const { simpleXlsx } = await import('./xlsx.js?v=6');
+  const { simpleXlsx } = await import('./xlsx.js?v=7');
   const bytes = await simpleXlsx(JSZip, [{ name: 'Relatório ' + brDate(R.dia).replace(/\//g, '-'), rows, head: [headRow], title: [0], widths: [10, 26, 12, 50, 36, 11, 12, 9, 9, 10, 11, 30, 22, 9] }]);
   download(bytes, repFileBase() + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   toast('Relatório baixado ✔');
@@ -798,7 +801,7 @@ function renderExport() {
   if (!has) { $('#exName').textContent = 'Sem documento ativo'; $('#exInfo').textContent = ''; return; }
   const c = counts(S.rows);
   $('#exName').textContent = exportName(S.cycle);
-  $('#exInfo').textContent = `${S.cycle.titulo || ''} • ${c.ok + c.pe} de ${c.total} OS preenchidas (${c.ok} executadas, ${c.pe} pendentes)`;
+  $('#exInfo').textContent = `${S.cycle.titulo || ''} • ${c.ok} executadas e ${c.pe} pendentes, de ${c.total} OS`;
 }
 $('#exEquipe').checked = ls.get('exEquipe', true);
 $('#exEquipe').addEventListener('change', (e) => ls.set('exEquipe', e.target.checked));
@@ -811,6 +814,7 @@ async function doExport(cycle, rows, fills, btn) {
     if (!bytes) throw new Error('Arquivo original não encontrado.');
     const withMats = {};
     for (const [k, f] of Object.entries(fills)) { const t = tokensOf(f); withMats[k] = { ...f, colab: t.map((c) => c.n).join(', '), mats: t.map((c) => c.m || '-').join(', ') }; }
+    for (const r of rows) if (!withMats[r.k]) withMats[r.k] = { ok: 'PENDENTE' }; // não executada = pendente
     const out = await exportWorkbook(JSZip, bytes, rows, withMats, { equipe: $('#exEquipe').checked, mats: $('#exMats').checked });
     download(out.bytes, exportName(cycle), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     toast('Planilha baixada ✔');
