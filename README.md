@@ -40,11 +40,13 @@ Sem isso o site roda em **modo local (demonstração)**: dados só no navegador 
 
 ### Trocar a senha de upload
 A senha não aparece no código, só o “hash” dela. Para trocar:
-1. Gere o hash da nova senha (ex.: no navegador, F12 → Console):
+1. Gere os dois formatos do hash da nova senha (no navegador, F12 → Console):
    ```js
-   btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('NOVA-SENHA')))))
+   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode('NOVA-SENHA')));
+   console.log('hex:', [...h].map(b => b.toString(16).padStart(2, '0')).join(''), '\nbase64:', btoa(String.fromCharCode(...h)));
    ```
-2. Substitua o valor antigo pelo novo em **dois lugares**: `firestore.rules` (função `senhaOk`, e publique as regras de novo no Firebase) e `assets/js/store-local.js` (`UPLOAD_HASH`).
+2. Coloque o **hex** em `firestore.rules` (função `senhaOk`) e publique as regras de novo no Firebase.
+3. Coloque o **base64** em `assets/js/store-local.js` (`UPLOAD_HASH`).
 
 ### Limites do plano grátis (Spark)
 50 mil leituras e 20 mil gravações por dia — sobra para uma equipe preenchendo ~1.500 OS por mês (os preenchimentos ficam agrupados por pátio, então abrir a lista custa poucas leituras).
