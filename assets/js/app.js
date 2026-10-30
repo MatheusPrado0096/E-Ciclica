@@ -1,6 +1,6 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, norm } from './xlsx.js?v=7';
-import { createLocalStore } from './store-local.js?v=7';
+import { parseWorkbook, buildRows, exportWorkbook, norm } from './xlsx.js?v=8';
+import { createLocalStore } from './store-local.js?v=8';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -81,7 +81,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js?v=7');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=8');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {
@@ -461,8 +461,36 @@ bindEqChips($('#fEquipe'), renderTokens);
 bindSeg($('#fOk'), () => ($('#fErr').textContent = ''));
 $$('.now').forEach((b) => b.addEventListener('click', () => { $('#' + b.dataset.now).value = nowHM(); }));
 
-function openFill(keys) {
-  FK = keys.filter((k) => S.byK.has(k)); if (!FK.length) return;
+// confirma antes de mexer numa OS que já foi preenchida (evita alterar por engano)
+async function openFill(keys) {
+  keys = keys.filter((k) => S.byK.has(k)); if (!keys.length) return;
+  const filled = keys.filter((k) => S.fills[k]);
+  if (filled.length && keys.length === 1) {
+    const r = S.byK.get(keys[0]); const f = S.fills[keys[0]]; const ex = f.ok === 'EXECUTADO';
+    const ok = await dialog({
+      title: 'Esta OS já está preenchida', yes: 'Sim, alterar', no: 'Cancelar',
+      html: `<p>Deseja <b>alterar</b> o preenchimento da OS <b>${h(r.os)}</b>?</p>
+        <dl class="info"><dt>Ativo</dt><dd>${h(r.ativo)}</dd><dt>OK</dt><dd><span class="pill ${ex ? 'ok' : 'pe'}">${ex ? 'EXECUTADO' : 'PENDENTE'}</span></dd>
+        ${f.dia ? `<dt>Dia</dt><dd>${brDate(f.dia)}${f.hIni ? ' • ' + h(f.hIni) + (f.hFim ? '–' + h(f.hFim) : '') : ''}</dd>` : ''}
+        <dt>Colab.</dt><dd>${h(tokensOf(f).map((c) => c.n + (c.m ? ' (' + c.m + ')' : '')).join(', ') || '—')}</dd>
+        <dt>Por</dt><dd>${h(f.by || '—')} • ${h(ago(f.at))}</dd></dl>`,
+    });
+    if (!ok) return;
+  } else if (filled.length) {
+    const r = await dialog({
+      title: `${filled.length} OS já ${filled.length > 1 ? 'estão preenchidas' : 'está preenchida'}`, yes: 'Continuar', no: 'Cancelar',
+      html: `<p>Das <b>${keys.length}</b> OS selecionadas, <b>${filled.length}</b> já ${filled.length > 1 ? 'têm' : 'tem'} preenchimento.</p>
+        <label class="check"><input type="checkbox" id="ovAll"><span>Alterar também as já preenchidas</span></label>
+        <p class="muted small">Deixando desmarcado, só as ${keys.length - filled.length} OS ainda não preenchidas serão preenchidas.</p>`,
+      validate: (bd) => ({ all: $('#ovAll', bd).checked }),
+    });
+    if (!r) return;
+    if (!r.all) { keys = keys.filter((k) => !S.fills[k]); if (!keys.length) { toast('Todas as OS selecionadas já estavam preenchidas.'); return; } }
+  }
+  showFill(keys);
+}
+function showFill(keys) {
+  FK = keys;
   const single = FK.length === 1; const r0 = S.byK.get(FK[0]); const f0 = single ? S.fills[FK[0]] : null;
   $('#shEyebrow').textContent = single ? `${r0.patio} • OS ${r0.os}` : 'Preenchimento em lote';
   $('#shTitle').textContent = single ? r0.ativo || r0.os : `Preencher ${FK.length} OS de uma vez`;
@@ -788,7 +816,7 @@ $('#rXlsx').addEventListener('click', async () => {
     ['PÁTIO', 'ATIVO', 'OS', 'SERVIÇO', 'DESCRIÇÃO', 'SEGURANÇA', 'OK', 'H INÍCIO', 'H FIM', 'MANUT. IMEDIATA', 'NECESSIDADE', 'COLABORADORES', 'MATRÍCULAS', 'EQUIPE']];
   const headRow = rows.length - 1;
   for (const { r, f } of items) { const t = tokensOf(f); rows.push([r.patio, r.ativo, r.os, r.servico, r.desc, isSeg(r) ? 'SIM' : '', f.ok, f.hIni || '', f.hFim || '', f.imediata || '', f.necessidade || '', t.map((c) => c.n).join(', '), t.map((c) => c.m || '-').join(', '), f.equipe || '']); }
-  const { simpleXlsx } = await import('./xlsx.js?v=7');
+  const { simpleXlsx } = await import('./xlsx.js?v=8');
   const bytes = await simpleXlsx(JSZip, [{ name: 'Relatório ' + brDate(R.dia).replace(/\//g, '-'), rows, head: [headRow], title: [0], widths: [10, 26, 12, 50, 36, 11, 12, 9, 9, 10, 11, 30, 22, 9] }]);
   download(bytes, repFileBase() + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   toast('Relatório baixado ✔');
