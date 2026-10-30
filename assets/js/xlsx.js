@@ -102,6 +102,7 @@ export const FIELDS = {
   imediata: (h) => h.includes('IMEDIATA'),
   necessidade: (h) => h.includes('NECESSIDADE'),
   colab: (h) => h.startsWith('COLABORADOR'),
+  mats: (h) => h.startsWith('MATRICULA'),
   equipe: (h) => h === 'EQUIPE',
 };
 const REQUIRED = ['os', 'ok', 'dia'];
@@ -291,15 +292,18 @@ function patchRow(rowXml, rowNum, values, styles, styleHint) {
 
 function patchSheet(xml, header, byRow, styles, opts) {
   const map = { ...header.map };
-  const writeEquipe = opts.equipe && !map.equipe;
   let lastCol = 0;
   for (const c of Object.values(map)) lastCol = Math.max(lastCol, colToNum(c));
-  if (writeEquipe) map.equipe = numToCol(lastCol + 1);
+  // colunas extras acrescentadas no fim (só se a planilha ainda não tiver)
+  const extras = [];
+  if (opts.mats && !map.mats) extras.push(['mats', 'MATRÍCULAS']);
+  if (opts.equipe && !map.equipe) extras.push(['equipe', 'EQUIPE']);
+  for (const [f] of extras) map[f] = numToCol(++lastCol);
   // estilo de referência: célula de colaboradores (ou a última) da mesma linha
-  const refCol = header.map.colab || numToCol(lastCol);
+  const refCol = header.map.colab || numToCol(colToNum(Object.values(header.map).sort((x, y) => colToNum(y) - colToNum(x))[0]));
 
   const todo = new Map(byRow);
-  if (writeEquipe) todo.set(header.row, '__header__');
+  if (extras.length) todo.set(header.row, '__header__');
   if (!todo.size) return xml;
 
   ROW_RE.lastIndex = 0;
@@ -311,11 +315,10 @@ function patchSheet(xml, header, byRow, styles, opts) {
     const rowXml = m[0];
     const sHint = {};
     const refCell = rowXml.match(new RegExp(`<c\\b[^>]*\\sr="${refCol}${r}"[^>]*`));
-    if (refCell) sHint[map.equipe] = attr(refCell[0], 's');
-    let values;
-    if (fill === '__header__') values = { [map.equipe]: { v: 'EQUIPE' } };
+    if (refCell) for (const [f] of extras) sHint[map[f]] = attr(refCell[0], 's');
+    let values = {};
+    if (fill === '__header__') for (const [f, label] of extras) values[map[f]] = { v: label };
     else {
-      values = {};
       const put = (f, v, fmt) => { if (map[f]) values[map[f]] = { v, fmt }; };
       put('ok', fill.ok || '');
       put('dia', fill.dia ? dateSerial(fill.dia) : '', 'dd/mm/yyyy');
@@ -324,19 +327,22 @@ function patchSheet(xml, header, byRow, styles, opts) {
       put('imediata', fill.imediata || '');
       put('necessidade', fill.necessidade || '');
       put('colab', fill.colab || '');
+      if (opts.mats || header.map.mats) put('mats', fill.mats || '');
       if (opts.equipe || header.map.equipe) put('equipe', fill.equipe || '');
     }
     out += xml.slice(last, m.index) + patchRow(rowXml, r, values, styles, sHint);
     last = m.index + m[0].length;
   }
   out += xml.slice(last);
-  if (writeEquipe) {
-    const eqNum = colToNum(map.equipe);
+  if (extras.length) {
+    const lastL = numToCol(lastCol);
     out = out.replace(/<dimension ref="([A-Z]+)(\d+):([A-Z]+)(\d+)"/, (all, c1, r1, c2, r2) =>
-      colToNum(c2) < eqNum ? `<dimension ref="${c1}${r1}:${map.equipe}${r2}"` : all);
-    // largura da nova coluna
-    if (/<cols>/.test(out) && !new RegExp(`<col\\b[^>]*min="${eqNum}"`).test(out))
-      out = out.replace('</cols>', `<col min="${eqNum}" max="${eqNum}" width="16" customWidth="1"/></cols>`);
+      colToNum(c2) < lastCol ? `<dimension ref="${c1}${r1}:${lastL}${r2}"` : all);
+    for (const [f] of extras) {
+      const n = colToNum(map[f]); const w = f === 'mats' ? 24 : 14;
+      if (/<cols>/.test(out) && !new RegExp(`<col\\b[^>]*min="${n}"`).test(out))
+        out = out.replace('</cols>', `<col min="${n}" max="${n}" width="${w}" customWidth="1"/></cols>`);
+    }
   }
   return out;
 }
@@ -345,7 +351,7 @@ function patchSheet(xml, header, byRow, styles, opts) {
  * Gera o .xlsx preenchido.
  * @param fillsByKey { [k]: {ok, dia, hIni, hFim, imediata, necessidade, colab, equipe} }
  * @param rows linhas do ciclo (k, os, aba, r)
- * @param opts { equipe: bool }  (equipe = acrescenta a coluna EQUIPE)
+ * @param opts { equipe: bool, mats: bool }  (acrescenta as colunas EQUIPE / MATRÍCULAS)
  */
 export async function exportWorkbook(JSZip, data, rows, fillsByKey, opts = {}) {
   const zip = await JSZip.loadAsync(data);
@@ -369,7 +375,7 @@ export async function exportWorkbook(JSZip, data, rows, fillsByKey, opts = {}) {
       const f = byAbaRow.get(sh.name + '|' + it.r) || (sh.role !== 'principal' ? byOs.get(it.os) : null);
       if (f) byRow.set(it.r, f);
     }
-    if (!byRow.size && !opts.equipe) continue;
+    if (!byRow.size && !opts.equipe && !opts.mats) continue;
     const xml = await zip.file(sh.path).async('string');
     zip.file(sh.path, patchSheet(xml, sh.header, byRow, styles, opts));
     total += byRow.size;
@@ -383,4 +389,30 @@ export async function exportWorkbook(JSZip, data, rows, fillsByKey, opts = {}) {
 
   const out = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 }, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   return { bytes: out, cells: total };
+}
+
+// ---------- planilha simples (relatório) ----------
+/** sheets: [{ name, rows: [[...valores]], widths: [n], head: [índices de linhas em negrito] }] */
+export async function simpleXlsx(JSZip, sheets) {
+  const zip = new JSZip();
+  const ct = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'];
+  sheets.forEach((_, i) => ct.push(`<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`));
+  zip.file('[Content_Types].xml', ct.join('') + '</Types>');
+  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${NS_REL}"><sheets>${sheets.map((s, i) => `<sheet name="${esc(s.name.slice(0, 31))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`);
+  zip.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+  // 0 normal, 1 negrito com fundo, 2 título grande, 3 quebra de linha
+  zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="14"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF00335E"/></patternFill></fill></fills><borders count="2"><border/><border><bottom style="thin"><color rgb="FFCCCCCC"/></bottom></border></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="4"><xf/><xf fontId="1" fillId="2" applyFont="1" applyFill="1"><alignment vertical="center" wrapText="1"/></xf><xf fontId="2" applyFont="1"/><xf borderId="1" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>');
+  sheets.forEach((s, i) => {
+    const cols = s.widths ? `<cols>${s.widths.map((w, j) => `<col min="${j + 1}" max="${j + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '';
+    const rows = s.rows.map((row, r) => `<row r="${r + 1}">${row.map((v, c) => {
+      const ref = numToCol(c + 1) + (r + 1);
+      const st = (s.head || []).includes(r) ? 1 : (s.title || []).includes(r) ? 2 : r > 0 && v != null && v !== '' ? 3 : 0;
+      if (v == null || v === '') return '';
+      if (typeof v === 'number') return `<c r="${ref}" s="${st}"><v>${v}</v></c>`;
+      return `<c r="${ref}" s="${st}" t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
+    }).join('')}</row>`).join('');
+    zip.file(`xl/worksheets/sheet${i + 1}.xml`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${cols}<sheetData>${rows}</sheetData></worksheet>`);
+  });
+  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }

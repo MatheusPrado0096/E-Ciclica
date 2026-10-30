@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#00335e">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
 <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
-<link rel="manifest" href="manifest.webmanifest?v=4">
-<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="manifest" href="manifest.webmanifest?v=6">
+<link rel="stylesheet" href="assets/css/style.css?v=6">
 <script>
   try{var t=localStorage.getItem('eciclica-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t}catch(e){}
 </script>
@@ -49,6 +49,9 @@
     <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0ZM12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V3h6v1M9 11h6M9 15h6M9 19h3"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
   </defs>
 </svg>
@@ -106,6 +109,7 @@
     <span class="tab-ind" aria-hidden="true"></span>
     <button class="tab" role="tab" data-tab="ciclica"><svg class="ic"><use href="#i-list"/></svg><span>Cíclica</span></button>
     <button class="tab" role="tab" data-tab="painel"><svg class="ic"><use href="#i-chart"/></svg><span>Painel</span></button>
+    <button class="tab" role="tab" data-tab="relatorio"><svg class="ic"><use href="#i-clip"/></svg><span>Relatório</span></button>
     <button class="tab" role="tab" data-tab="exportar"><svg class="ic"><use href="#i-download"/></svg><span>Exportar</span></button>
     <button class="tab" role="tab" data-tab="documento"><svg class="ic"><use href="#i-file"/></svg><span>Documento</span></button>
   </nav>
@@ -171,6 +175,21 @@
       <div class="tip" id="tip" hidden></div>
     </section>
 
+    <!-- RELATÓRIO DIÁRIO -->
+    <section id="relatorio" class="panel" role="tabpanel" hidden>
+      <div class="section-head"><div><span class="eyebrow">Relatório diário</span><h2>O que foi feito no dia</h2></div></div>
+      <div class="filters rel-f">
+        <label class="sel"><span>Dia</span><input type="date" id="rDia"></label>
+        <label class="sel"><span>De quem</span><select id="rQuem"></select></label>
+      </div>
+      <div id="rep"></div>
+      <div class="rep-actions" id="repAct">
+        <button class="btn" id="rShare"><svg class="ic"><use href="#i-share"/></svg><span>Compartilhar resumo</span></button>
+        <button class="btn" id="rXlsx"><svg class="ic"><use href="#i-file"/></svg><span>Baixar Excel</span></button>
+        <button class="btn primary" id="rPdf"><svg class="ic"><use href="#i-download"/></svg><span>Baixar PDF</span></button>
+      </div>
+    </section>
+
     <!-- EXPORTAR -->
     <section id="exportar" class="panel" role="tabpanel" hidden>
       <div class="section-head"><div><span class="eyebrow">Exportar</span><h2>Planilha preenchida</h2></div></div>
@@ -179,7 +198,8 @@
         <div class="export-tx">
           <b id="exName">—</b>
           <span class="muted" id="exInfo"></span>
-          <label class="check"><input type="checkbox" id="exEquipe" checked><span>Adicionar a coluna <b>EQUIPE</b> no final</span></label>
+          <label class="check"><input type="checkbox" id="exMats" checked><span>Adicionar a coluna <b>MATRÍCULAS</b> (dos colaboradores)</span></label>
+          <label class="check"><input type="checkbox" id="exEquipe" checked><span>Adicionar a coluna <b>EQUIPE</b></span></label>
           <p class="muted small">O arquivo sai igual ao original (abas, cores, filtros e larguras), com as colunas OK, DIA, H INÍCIO, H FIM, S/N e COLABORADORES preenchidas — inclusive nas abas de cada pátio.</p>
         </div>
         <button class="btn primary big" id="exBtn"><svg class="ic"><use href="#i-download"/></svg><span>Baixar .xlsx</span></button>
@@ -270,8 +290,11 @@
 
       <div class="field">
         <span class="fl-l">Colaboradores <i>*</i></span>
-        <div class="tokens" id="fColab">
-          <input id="fColabIn" autocomplete="off" placeholder="Digite um nome e toque Enter" list="colabList" enterkeyhint="done">
+        <div class="tokens" id="fColab"></div>
+        <div class="add-colab">
+          <input id="fColabIn" autocomplete="off" placeholder="Nome do colaborador" list="colabList" enterkeyhint="next" aria-label="Nome do colaborador">
+          <input id="fMatIn" autocomplete="off" inputmode="numeric" placeholder="Matrícula" maxlength="20" enterkeyhint="done" aria-label="Matrícula do colaborador">
+          <button type="button" class="btn primary" id="fColabAdd" aria-label="Adicionar colaborador"><svg class="ic"><use href="#i-plus"/></svg></button>
         </div>
         <datalist id="colabList"></datalist>
         <div class="chips sugg" id="fColabSugg"></div>
@@ -319,9 +342,9 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.js?v=4"></script>
+<script src="config.js?v=6"></script>
 <script src="assets/vendor/jszip.min.js"></script>
-<script type="module" src="assets/js/app.js?v=4"></script>
+<script type="module" src="assets/js/app.js?v=6"></script>
 <noscript><p style="padding:24px;font-family:sans-serif">Ative o JavaScript para usar o E-Cíclica.</p></noscript>
 </body>
 </html>

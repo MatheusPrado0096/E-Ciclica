@@ -1,5 +1,5 @@
 // E-Cíclica • service worker: rede primeiro, cache como reserva (funciona offline)
-const C = 'eciclica-v4';
+const C = 'eciclica-v6';
 self.addEventListener('install', (e) => { self.skipWaiting(); e.waitUntil(caches.open(C).then((c) => c.addAll(['./', 'index.html', 'config.js', 'assets/css/style.css', 'assets/js/app.js', 'assets/js/xlsx.js', 'assets/js/store-local.js', 'assets/js/store-firebase.js', 'assets/vendor/jszip.min.js', 'assets/img/mrs-mark.png', 'assets/img/mrs-logo.png']).catch(() => {}))); });
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', (e) => {

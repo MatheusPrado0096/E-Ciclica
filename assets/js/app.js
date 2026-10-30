@@ -1,6 +1,6 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, norm } from './xlsx.js?v=4';
-import { createLocalStore } from './store-local.js?v=4';
+import { parseWorkbook, buildRows, exportWorkbook, norm } from './xlsx.js?v=6';
+import { createLocalStore } from './store-local.js?v=6';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -81,7 +81,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js?v=4');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=6');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {
@@ -180,7 +180,7 @@ function syncState(meta) {
 addEventListener('online', () => syncState({})); addEventListener('offline', () => syncState({}));
 
 // ---------- abas ----------
-const TABS = ['ciclica', 'painel', 'exportar', 'documento'];
+const TABS = ['ciclica', 'painel', 'relatorio', 'exportar', 'documento'];
 function route() {
   let t = location.hash.slice(1);
   if (!TABS.includes(t)) t = 'ciclica';
@@ -190,6 +190,7 @@ function route() {
   moveInd();
   if (t === 'painel') renderDash();
   if (t === 'exportar') renderExport();
+  if (t === 'relatorio') renderReport();
   if (t === 'documento') { renderCycles(); renderDocLock(); }
   $('#selbar').hidden = !(S.selecting && t === 'ciclica');
 }
@@ -233,6 +234,7 @@ function renderAll(fillsOnly) {
   renderList(fillsOnly);
   if (S.tab === 'painel') renderDash();
   if (S.tab === 'exportar') renderExport();
+  if (S.tab === 'relatorio') renderReport();
 }
 function renderHero() {
   const c = counts(S.rows); const t = c.total || 1;
@@ -254,12 +256,13 @@ function renderChips() {
   $('#patioBtn').classList.toggle('on', !!S.f.patio);
   const chip = (attr, v, label, n, on) => `<button class="chip" data-${attr}="${h(v)}" aria-pressed="${on}">${h(label)}${n != null ? `<small>${n}</small>` : ''}</button>`;
   const sts = [['todas', 'Todas'], ['none', 'Sem preencher'], ['ok', 'Executadas'], ['pe', 'Pendentes']];
-  $('#statusChips').innerHTML = sts.map(([v, l]) => chip('status', v, l, null, S.f.status === v)).join('');
+  $('#statusChips').innerHTML = sts.map(([v, l]) => chip('status', v, l, null, S.f.status === v)).join('') +
+    `<button class="chip chip-seg" data-segf aria-pressed="${!!S.f.seg}">${ICON('shield')}Só segurança</button>`;
   $('#abaChips').hidden = ac.size < 2;
   if (S.f.aba && !ac.has(S.f.aba)) S.f.aba = '';
   $('#abaChips').innerHTML = chip('aba', '', 'Todas as abas', null, !S.f.aba) + [...ac.entries()].map(([a, n]) => chip('aba', a, a, n, S.f.aba === a)).join('');
 }
-$('#statusChips').addEventListener('click', (e) => { const b = e.target.closest('[data-status]'); if (!b) return; S.f.status = b.dataset.status; renderChips(); renderList(); });
+$('#statusChips').addEventListener('click', (e) => { if (e.target.closest('[data-segf]')) { S.f.seg = !S.f.seg; renderChips(); renderList(); return; } const b = e.target.closest('[data-status]'); if (!b) return; S.f.status = b.dataset.status; renderChips(); renderList(); });
 $('#abaChips').addEventListener('click', (e) => { const b = e.target.closest('[data-aba]'); if (!b) return; S.f.aba = b.dataset.aba; renderChips(); renderList(); });
 let qT;
 $('#q').addEventListener('input', () => { $('#qClear').hidden = !$('#q').value; clearTimeout(qT); qT = setTimeout(() => { S.f.q = $('#q').value; renderList(); }, 120); });
@@ -293,6 +296,7 @@ function applyFilters() {
   return S.rows.filter((r) => {
     if (S.f.patio && r.patio !== S.f.patio) return false;
     if (S.f.aba && r.aba !== S.f.aba) return false;
+    if (S.f.seg && !isSeg(r)) return false;
     if (S.f.status !== 'todas' && statusOf(r.k) !== S.f.status) return false;
     if (terms.length) {
       const f = S.fills[r.k];
@@ -330,7 +334,7 @@ function itemHtml(r) {
     <span class="cb${on ? ' on' : ''}">${ICON('check')}</span>
     <span class="st ${st === 'none' ? '' : st}">${st === 'ok' ? ICON('check') : st === 'pe' ? ICON('clock') : ''}</span>
     <span class="it-main"><span class="it-sv">${hi(r.servico || r.desc)}</span><span class="it-meta">${meta}</span></span>
-    <span class="it-os">${hi(r.os)}</span></button>`;
+    <span class="it-os">${hi(r.os)}${isSeg(r) ? '<span class="segb">SEG</span>' : ''}</span></button>`;
 }
 const gk = (r) => r.patio + '|' + r.ativo;
 function renderMore(n = PAGE) {
@@ -401,34 +405,56 @@ $('#selClose').addEventListener('click', () => setSelecting(false));
 $('#selAll').addEventListener('click', () => { const ks = S.filtered.map((r) => r.k); if (ks.length && ks.every((k) => S.sel.has(k))) S.sel.clear(); else ks.forEach((k) => S.sel.add(k)); renderList(true); updSelbar(); });
 $('#selFill').addEventListener('click', () => S.sel.size && openFill([...S.sel]));
 
-// ---------- preenchimento ----------
+// ---------- preenchimento: colaboradores com matrícula ----------
 let FK = [];
-let colabTokens = [];
+let colabTokens = []; // [{n: nome, m: matrícula}]
+const keyN = (n) => norm(n);
+function matOf(nome) { const u = S.users.find((x) => keyN(x.nome) === keyN(nome)); return u ? u.matricula : ''; }
+function nameOf(mat) { const u = S.users.find((x) => String(x.matricula) === String(mat)); return u ? u.nome : ''; }
+function recent() { return ls.get('recentColab2', []).filter((x) => x && x.n); }
+// tokens de um preenchimento (aceita o formato antigo, só com nomes)
+function tokensOf(f) {
+  if (!f) return [];
+  if (Array.isArray(f.colabs)) return f.colabs.map((c) => ({ n: c.n, m: c.m || matOf(c.n) }));
+  const ms = splitColab(f.mats);
+  return splitColab(f.colab).map((n, i) => ({ n, m: (ms[i] && ms[i] !== '-' ? ms[i] : '') || matOf(n) }));
+}
 function fillColabList() {
-  const names = new Set(S.users.map((u) => u.nome));
-  ls.get('recentColab', []).forEach((n) => names.add(n));
-  $('#colabList').innerHTML = [...names].map((n) => `<option value="${h(n)}">`).join('');
+  const all = new Map();
+  S.users.forEach((u) => all.set(keyN(u.nome), { n: u.nome, m: u.matricula }));
+  recent().forEach((c) => all.has(keyN(c.n)) || all.set(keyN(c.n), c));
+  $('#colabList').innerHTML = [...all.values()].map((c) => `<option value="${h(c.n)}">${c.m ? 'Matrícula ' + h(c.m) : ''}</option>`).join('');
 }
 function renderTokens() {
-  $$('#fColab .tok').forEach((t) => t.remove());
-  $('#fColabIn').insertAdjacentHTML('beforebegin', colabTokens.map((n, i) => `<span class="tok">${h(n)}<button type="button" data-rm="${i}" aria-label="Remover ${h(n)}">${ICON('x')}</button></span>`).join(''));
-  const eq = $('#fEquipe').dataset.value;
-  const names = new Set([S.me?.nome, ...ls.get('recentColab', []), ...S.users.filter((u) => eq && u.equipe === eq).map((u) => u.nome)]);
-  $('#fColabSugg').innerHTML = [...names].filter((n) => n && !colabTokens.includes(n)).slice(0, 8).map((n) => `<button type="button" class="chip" data-add="${h(n)}">${h(n)}</button>`).join('');
+  $('#fColab').innerHTML = colabTokens.map((c, i) => `<span class="tok">${h(c.n)}${c.m ? `<em>${h(c.m)}</em>` : '<em class="nomat">sem matrícula</em>'}<button type="button" data-rm="${i}" aria-label="Remover ${h(c.n)}">${ICON('x')}</button></span>`).join('')
+    || '<span class="muted small" style="padding:6px">Nenhum colaborador ainda.</span>';
+  const eq = $('#fEquipe').dataset.value; const have = new Set(colabTokens.map((c) => keyN(c.n)));
+  const sugg = new Map();
+  const add = (c) => c?.n && !have.has(keyN(c.n)) && !sugg.has(keyN(c.n)) && sugg.set(keyN(c.n), c);
+  add({ n: S.me?.nome, m: S.me?.matricula });
+  recent().forEach(add);
+  S.users.filter((u) => eq && u.equipe === eq).forEach((u) => add({ n: u.nome, m: u.matricula }));
+  $('#fColabSugg').innerHTML = [...sugg.values()].slice(0, 8).map((c) => `<button type="button" class="chip" data-add="${h(c.n)}" data-m="${h(c.m || '')}">${h(c.n)}</button>`).join('');
 }
-function addToken(v) {
-  splitColab(v.replace(/;/g, ',')).forEach((n) => { if (!colabTokens.some((t) => t.toLowerCase() === n.toLowerCase())) colabTokens.push(n); });
-  $('#fColabIn').value = ''; renderTokens();
+function addColab(n, m) {
+  n = String(n || '').trim().replace(/\s+/g, ' '); m = cleanMat(m);
+  if (!n && m) n = nameOf(m);
+  if (!n) return false;
+  if (!m) m = matOf(n);
+  const i = colabTokens.findIndex((t) => keyN(t.n) === keyN(n));
+  if (i >= 0) { if (m) colabTokens[i].m = m; } else colabTokens.push({ n, m });
+  $('#fColabIn').value = ''; $('#fMatIn').value = ''; renderTokens();
+  return true;
 }
-$('#fColab').addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (b) { colabTokens.splice(+b.dataset.rm, 1); renderTokens(); } else $('#fColabIn').focus(); });
-$('#fColabIn').addEventListener('keydown', (e) => {
-  if ((e.key === 'Enter' || e.key === ',') && e.target.value.trim()) { e.preventDefault(); addToken(e.target.value); }
-  else if (e.key === 'Enter') e.preventDefault();
-  else if (e.key === 'Backspace' && !e.target.value && colabTokens.length) { colabTokens.pop(); renderTokens(); }
-});
-$('#fColabIn').addEventListener('change', (e) => { if (e.target.value.trim()) addToken(e.target.value); });
-$('#fColabIn').addEventListener('blur', (e) => { if (e.target.value.trim()) addToken(e.target.value); });
-$('#fColabSugg').addEventListener('click', (e) => { const b = e.target.closest('[data-add]'); if (b) addToken(b.dataset.add); });
+function addFromInputs() { return addColab($('#fColabIn').value, $('#fMatIn').value); }
+$('#fColab').addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (b) { colabTokens.splice(+b.dataset.rm, 1); renderTokens(); } });
+// nome conhecido -> preenche a matrícula; matrícula conhecida -> preenche o nome
+$('#fColabIn').addEventListener('input', (e) => { const m = matOf(e.target.value); if (m) $('#fMatIn').value = m; });
+$('#fMatIn').addEventListener('input', (e) => { const n = nameOf(cleanMat(e.target.value)); if (n && !$('#fColabIn').value.trim()) $('#fColabIn').value = n; });
+$('#fColabIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if ($('#fMatIn').value || matOf(e.target.value)) addFromInputs(); else $('#fMatIn').focus(); } });
+$('#fMatIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addFromInputs(); $('#fColabIn').focus(); } });
+$('#fColabAdd').addEventListener('click', () => { if (!addFromInputs()) $('#fColabIn').focus(); });
+$('#fColabSugg').addEventListener('click', (e) => { const b = e.target.closest('[data-add]'); if (b) addColab(b.dataset.add, b.dataset.m); });
 bindEqChips($('#fEquipe'), renderTokens);
 ['#fImed', '#fNec'].forEach((s) => bindSeg($(s)));
 bindSeg($('#fOk'), () => ($('#fErr').textContent = ''));
@@ -450,11 +476,11 @@ function openFill(keys) {
   }
   const last = ls.get('last', {});
   const base = f0 || { ok: 'EXECUTADO', dia: todayISO(), hIni: last.hIni && last.day === todayISO() ? last.hIni : nowHM(), hFim: nowHM(), imediata: 'N', necessidade: 'N',
-    colab: (last.colab?.length ? last.colab : [S.me.nome]).join(', '), equipe: last.equipe ?? S.me.equipe ?? '' };
+    colabs: last.colabs?.length ? last.colabs : [{ n: S.me.nome, m: S.me.matricula }], equipe: last.equipe ?? S.me.equipe ?? '' };
   setSeg($('#fOk'), base.ok); $('#fDia').value = base.dia || todayISO(); $('#fIni').value = base.hIni || ''; $('#fFim').value = base.hFim || '';
   setSeg($('#fImed'), base.imediata || 'N'); setSeg($('#fNec'), base.necessidade || 'N');
-  colabTokens = splitColab(base.colab);
-  eqChips($('#fEquipe'), base.equipe || ''); renderTokens(); $('#fColabIn').value = '';
+  colabTokens = tokensOf(base).map((c) => ({ ...c }));
+  eqChips($('#fEquipe'), base.equipe || ''); renderTokens(); $('#fColabIn').value = ''; $('#fMatIn').value = '';
   $('#fClear').hidden = !FK.some((k) => S.fills[k]);
   $('#fErr').textContent = '';
   const sh = $('#sheet'); sh.hidden = false; $('.sheet-body', sh).scrollTop = 0;
@@ -474,22 +500,24 @@ document.addEventListener('keydown', (e) => {
 
 $('#fillForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  if ($('#fColabIn').value.trim()) addToken($('#fColabIn').value);
+  if ($('#fColabIn').value.trim() || $('#fMatIn').value.trim()) addFromInputs();
   const fill = {
     ok: segVal($('#fOk')), dia: $('#fDia').value, hIni: $('#fIni').value, hFim: $('#fFim').value,
-    imediata: segVal($('#fImed')), necessidade: segVal($('#fNec')), colab: colabTokens.join(', '), equipe: $('#fEquipe').dataset.value || '',
+    imediata: segVal($('#fImed')), necessidade: segVal($('#fNec')), colab: colabTokens.map((c) => c.n).join(', '), mats: colabTokens.map((c) => c.m || '-').join(', '), colabs: colabTokens.map((c) => ({ n: c.n, m: c.m || '' })), equipe: $('#fEquipe').dataset.value || '',
     by: S.me.nome, mat: S.me.matricula, at: Date.now(),
   };
   const miss = [];
   if (!fill.ok) miss.push('OK');
   if (fill.ok === 'EXECUTADO') { if (!fill.dia) miss.push('Dia'); if (!fill.hIni) miss.push('H início'); if (!fill.hFim) miss.push('H fim'); }
   if (!fill.colab) miss.push('Colaboradores');
+  const semMat = colabTokens.filter((c) => !c.m).map((c) => c.n);
+  if (!miss.length && semMat.length && !(await dialog({ title: 'Colaborador sem matrícula', html: `<p>${semMat.map(h).join(', ')} ${semMat.length > 1 ? 'estão' : 'está'} sem matrícula. Salvar assim mesmo?</p><p class="muted small">Para incluir, remova e adicione de novo com a matrícula.</p>`, yes: 'Salvar assim', no: 'Voltar' }))) return;
   if (miss.length) { $('#fErr').textContent = 'Preencha: ' + miss.join(', ') + '.'; return; }
   const btn = $('#fSave'); btn.disabled = true;
   try {
     await S.store.saveFills(S.cycle.id, FK.map((k) => ({ k, g: S.byK.get(k).g, fill })));
-    ls.set('last', { colab: colabTokens, equipe: fill.equipe, hIni: fill.hIni, day: todayISO() });
-    ls.set('recentColab', [...new Set([...colabTokens, ...ls.get('recentColab', [])])].slice(0, 20));
+    ls.set('last', { colabs: colabTokens, equipe: fill.equipe, hIni: fill.hIni, day: todayISO() });
+    const rc = new Map(); [...colabTokens, ...recent()].forEach((c) => rc.has(keyN(c.n)) || rc.set(keyN(c.n), c)); ls.set('recentColab2', [...rc.values()].slice(0, 20));
     fillColabList();
     toast(FK.length > 1 ? `${FK.length} OS preenchidas ✔` : `OS ${S.byK.get(FK[0]).os} salva ✔`);
     if (FK.length > 1) setSelecting(false);
@@ -523,7 +551,7 @@ function dData() {
   for (const r of rows) {
     const f = S.fills[r.k]; if (!f) continue;
     if (D.eq && f.equipe !== D.eq) continue;
-    if (D.col && !splitColab(f.colab).includes(D.col)) continue;
+    if (D.col && !tokensOf(f).some((c) => c.n === D.col)) continue;
     if (rg && (!f.dia || f.dia < rg[0] || f.dia > rg[1])) continue;
     items.push({ r, f });
   }
@@ -534,7 +562,7 @@ function renderFilters() {
   const D = S.d;
   fillSelect($('#dPatio'), patios().map(([p]) => p), D.patio, 'Todos');
   const eqs = new Set(equipes()); const cols = new Set();
-  for (const f of Object.values(S.fills)) { if (f.equipe) eqs.add(f.equipe); splitColab(f.colab).forEach((c) => cols.add(c)); }
+  for (const f of Object.values(S.fills)) { if (f.equipe) eqs.add(f.equipe); tokensOf(f).forEach((c) => cols.add(c.n)); }
   fillSelect($('#dEq'), [...eqs].sort(), D.eq, 'Todas');
   fillSelect($('#dCol'), [...cols].sort((a, b) => a.localeCompare(b)), D.col, 'Todos');
   $('#dPer').value = D.per;
@@ -566,17 +594,30 @@ $('#dash').addEventListener('pointermove', (e) => {
 });
 $('#dash').addEventListener('pointerleave', () => (tip.hidden = true));
 
-const LEG = `<div class="legend-row"><span><i class="k-ok"></i>Executadas</span><span><i class="k-pe"></i>Pendentes</span></div>`;
-function hbar(label, ok, pe, max, extra = '', attrs = '') {
-  const tot = ok + pe; const w = (v) => (max ? (v / max) * 100 : 0);
-  return `<button class="hb" ${attrs} data-tip="<b>${h(label)}</b><br>Executadas: ${ok}<br>Pendentes: ${pe}${extra ? '<br>' + h(extra) : ''}">
-    <span class="hb-l">${h(label)}</span><span class="hb-t"><i class="x" style="width:${w(ok)}%"></i><i class="p" style="width:${w(pe)}%"></i></span><span class="hb-v">${tot}${extra ? `<small>${h(extra)}</small>` : ''}</span></button>`;
+// ---------- gráficos de pizza ----------
+const isSeg = (r) => r.seg ?? (r.seg = /(^|_)SEG(_|$)/.test(norm(r.desc).replace(/\s+/g, '_')));
+const pctTxt = (n, t) => (t ? Math.round((n / t) * 100) : 0) + '%';
+// parts: [{v, c (cor css), l (rótulo)}]; hole: 0..1
+function pie(parts, { size = 180, hole = 0.62, center = '', sub = '' } = {}) {
+  const tot = parts.reduce((a, p) => a + p.v, 0); const r = 25; const sw = 50 * (1 - hole) / 1; const rr = 50 - sw / 2;
+  let off = 0; const live = parts.filter((p) => p.v > 0); const gap = live.length > 1 ? 0.6 : 0;
+  const segs = tot ? live.map((p) => {
+    const len = (p.v / tot) * 100; const d = Math.max(0, len - gap);
+    const c = `<circle cx="50" cy="50" r="${rr}" pathLength="100" fill="none" stroke="${p.c}" stroke-width="${sw}" stroke-dasharray="${d} ${100 - d}" stroke-dashoffset="${-off}" data-tip="<b>${h(p.l)}</b><br>${p.v} OS • ${pctTxt(p.v, tot)}"/>`;
+    off += len; return c;
+  }).join('') : `<circle cx="50" cy="50" r="${rr}" fill="none" stroke="var(--c-none)" stroke-width="${sw}"/>`;
+  void r;
+  return `<div class="pie" style="width:${size}px;height:${size}px"><svg viewBox="0 0 100 100" transform="rotate(-90)">${segs}</svg>${center !== '' ? `<div class="pie-c"><b>${center}</b>${sub ? `<small>${sub}</small>` : ''}</div>` : ''}</div>`;
 }
+function legend(parts, tot) {
+  return `<ul class="pleg">${parts.map((p) => `<li${p.attr ? ' ' + p.attr : ''}><i style="background:${p.c}"></i><span>${h(p.l)}</span><b>${p.v}</b><small>${pctTxt(p.v, tot)}</small></li>`).join('')}</ul>`;
+}
+const CAT = ['var(--cat1)', 'var(--cat2)', 'var(--cat3)', 'var(--cat4)', 'var(--cat5)', 'var(--cat6)'];
 function emptyCard(t, s) { return `<div class="empty"><b>${t}</b><span>${s}</span></div>`; }
 
 function renderDash() {
-  if (!S.cycle) { $('#dash').innerHTML = emptyCard('Sem documento ativo', 'Envie a planilha do mês na aba Documento.'); $('#dFilters').hidden = $('#dNav').hidden = true; return; }
-  $('#dFilters').hidden = $('#dNav').hidden = false;
+  if (!S.cycle) { $('#dash').innerHTML = emptyCard('Sem documento ativo', 'Envie a planilha do mês na aba Documento.'); $('#dFilters').hidden = $('#dNav').hidden = true; $('#dFiltBtn').hidden = true; return; }
+  $('#dFilters').hidden = $('#dNav').hidden = false; $('#dFiltBtn').hidden = false;
   $('#pTitle').textContent = 'Painel • ' + (S.cycle.titulo || '');
   renderFilters();
   $$('#dNav [data-v]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.v === S.d.view)));
@@ -585,70 +626,59 @@ function renderDash() {
   $('#dash').innerHTML = v === 'geral' ? viewGeral(data) : v === 'patios' ? viewPatios(data) : v === 'equipes' ? viewEquipes(data)
     : v === 'pessoas' ? viewPessoas(data) : v === 'atencao' ? viewAtencao(data) : viewAtividade(data);
 }
-
-function viewGeral({ rows, items, rg }) {
-  const ok = items.filter((x) => x.f.ok === 'EXECUTADO').length; const pe = items.length - ok;
-  const none = rows.filter((r) => !S.fills[r.k]).length;
-  const pct = rows.length ? Math.round((ok / rows.length) * 100) : 0;
+// partes "status" de um conjunto de linhas, respeitando os filtros de pessoa/período
+function statusParts(rows, items) {
+  const set = new Set(rows.map((r) => r.k));
+  const its = items.filter((x) => set.has(x.r.k));
+  const ok = its.filter((x) => x.f.ok === 'EXECUTADO').length; const pe = its.length - ok;
   const pf = personFilter();
-  const kpi = (cls, n, l, sub = '') => `<div class="kpi ${cls}"><b>${n}</b><span>${l}</span>${sub ? `<small>${sub}</small>` : ''}</div>`;
-  // série diária
-  let days = [];
-  const ds = items.map((x) => x.f.dia).filter(Boolean).sort();
-  let a = rg ? rg[0] : ds[0], b = rg ? rg[1] : ds[ds.length - 1];
-  if (a === '0000') a = ds[0]; if (b === '9999') b = ds[ds.length - 1] || todayISO();
-  if (a && b) {
-    const d = new Date(a + 'T12:00'); const end = new Date(b + 'T12:00');
-    if ((end - d) / 864e5 > 62) d.setTime(end.getTime() - 61 * 864e5);
-    for (; d <= end; d.setDate(d.getDate() + 1)) days.push(isoOf(d));
-  }
-  const byDay = new Map(days.map((x) => [x, { ok: 0, pe: 0 }]));
-  for (const { f } of items) { const o = byDay.get(f.dia); if (o) o[f.ok === 'EXECUTADO' ? 'ok' : 'pe']++; }
-  const max = Math.max(1, ...[...byDay.values()].map((o) => o.ok + o.pe));
-  const nice = max <= 5 ? 5 : Math.ceil(max / 5) * 5;
-  const cols = days.map((d) => { const o = byDay.get(d); const [y, m, dd] = d.split('-');
-    return `<div class="col" data-tip="<b>${dd}/${m}/${y}</b><br>Executadas: ${o.ok}<br>Pendentes: ${o.pe}"><div class="col-s"><i class="p" style="height:${(o.pe / nice) * 100}%"></i><i class="x" style="height:${(o.ok / nice) * 100}%"></i></div><span>${+dd}</span></div>`; }).join('');
-  const chart = days.length ? `<div class="vchart" style="--n:${days.length}"><div class="grid"><span>${nice}</span><span>${nice / 2}</span><span>0</span></div><div class="cols">${cols}</div></div>`
-    : '<p class="muted">Nenhum preenchimento com data no filtro.</p>';
-  const imed = items.filter((x) => x.f.imediata === 'S').length; const nec = items.filter((x) => x.f.necessidade === 'S').length;
-  return `<div class="kpis">
-      ${kpi('k-ok', ok, 'Executadas', pf ? '' : pct + '% do plano')}
-      ${kpi('k-pe', pe, 'Pendentes')}
-      ${pf ? kpi('', items.length, 'Preenchidas no filtro') : kpi('', none, 'Sem preencher', 'de ' + rows.length + ' OS')}
-      <button class="kpi k-alert" data-go="atencao"><b>${imed + nec}</b><span>Pedem atenção</span><small>${imed} imediata • ${nec} necessidade</small></button>
-    </div>
-    ${pf ? '' : `<div class="card pad"><div class="card-t"><b>Andamento do plano</b><span class="muted small">${ok + pe} de ${rows.length} OS preenchidas</span></div>
-      <div class="big-prog" data-tip="Executadas: ${ok}<br>Pendentes: ${pe}<br>Sem preencher: ${none}"><i class="x" style="width:${rows.length ? (ok / rows.length) * 100 : 0}%"></i><i class="p" style="width:${rows.length ? (pe / rows.length) * 100 : 0}%"></i></div>${LEG}</div>`}
-    <div class="card pad"><div class="card-t"><b>Preenchimentos por dia</b><span class="muted small">pela data informada (DIA)</span></div>${LEG}${chart}</div>`;
+  const rest = pf ? rows.length - its.length : rows.filter((r) => !S.fills[r.k]).length;
+  return { ok, pe, rest, total: rows.length, parts: [
+    { v: ok, c: 'var(--c-ok)', l: 'Executadas' }, { v: pe, c: 'var(--c-pe)', l: 'Pendentes' },
+    { v: rest, c: 'var(--c-none)', l: pf ? 'Demais OS (fora do filtro)' : 'Sem preencher' }] };
 }
-function viewPatios({ items }) {
-  const by = new Map();
-  for (const r of S.rows) if (!S.d.patio || r.patio === S.d.patio) { const o = by.get(r.patio) || { n: 0, ok: 0, pe: 0 }; o.n++; by.set(r.patio, o); }
-  for (const { r, f } of items) by.get(r.patio)[f.ok === 'EXECUTADO' ? 'ok' : 'pe']++;
-  const list = [...by.entries()].sort((a, b) => (b[1].ok + b[1].pe) / b[1].n - (a[1].ok + a[1].pe) / a[1].n || a[0].localeCompare(b[0]));
-  return `<div class="card pad"><div class="card-t"><b>Andamento por pátio</b><span class="muted small">toque para abrir a lista</span></div>${LEG}
-    <div class="hbars pct">${list.map(([p, o]) => hbar(p, o.ok, o.pe, o.n, `${Math.round(((o.ok + o.pe) / o.n) * 100)}% de ${o.n}`, `data-p="${h(p)}"`)).join('')}</div></div>`;
+function viewGeral({ rows, items }) {
+  const all = statusParts(rows, items); const seg = statusParts(rows.filter(isSeg), items);
+  const imed = items.filter((x) => x.f.imediata === 'S').length; const nec = items.filter((x) => x.f.necessidade === 'S').length;
+  const card = (title, icon, st, note) => `<div class="card pad pie-card"><div class="card-t"><b>${ICON(icon)}${title}</b><span class="muted small">${st.total} OS</span></div>
+    <div class="pie-row">${pie(st.parts, { center: pctTxt(st.ok, st.total), sub: 'realizadas' })}${legend(st.parts, st.total)}</div>${note ? `<p class="muted small">${note}</p>` : ''}</div>`;
+  return `<div class="pie-grid">
+    ${card('Todas as OS', 'list', all)}
+    ${card('OS de segurança', 'shield', seg, 'OS com “SEG” na descrição (ex.: EE_INS_<b>SEG</b>_S_I…).')}
+  </div>
+  <button class="card pad alert-row" data-go="atencao"><span class="ar-ic">${ICON('alert')}</span><span class="ar-tx"><b>${imed + nec} OS pedem atenção</b><small>${imed} com manutenção imediata • ${nec} com necessidade de manutenção</small></span>${ICON('right')}</button>`;
+}
+function viewPatios({ rows, items }) {
+  const by = new Map(); for (const r of rows) (by.get(r.patio) || by.set(r.patio, []).get(r.patio)).push(r);
+  const list = [...by.entries()].map(([p, rs]) => [p, statusParts(rs, items), statusParts(rs.filter(isSeg), items)])
+    .sort((a, b) => b[1].ok / b[1].total - a[1].ok / a[1].total || a[0].localeCompare(b[0]));
+  return `<div class="card pad"><div class="card-t"><b>OS realizadas por pátio</b><span class="muted small">toque para abrir a lista</span></div>
+    ${legend(list.length ? [{ v: list.reduce((a, x) => a + x[1].ok, 0), c: 'var(--c-ok)', l: 'Executadas' }, { v: list.reduce((a, x) => a + x[1].pe, 0), c: 'var(--c-pe)', l: 'Pendentes' }, { v: list.reduce((a, x) => a + x[1].rest, 0), c: 'var(--c-none)', l: personFilter() ? 'Demais OS' : 'Sem preencher' }] : [], rows.length).replace('class="pleg"', 'class="pleg inline"')}
+    <div class="mini-grid">${list.map(([p, st, sg]) => `<button class="mini" data-p="${h(p)}">${pie(st.parts, { size: 92, hole: 0.6, center: pctTxt(st.ok, st.total) })}
+      <b>${h(p)}</b><small>${st.ok}/${st.total} realizadas</small><small class="segs">${ICON('shield')}${sg.total ? `${sg.ok}/${sg.total} seg.` : 'sem OS seg.'}</small></button>`).join('')}</div></div>`;
+}
+function shareCard(title, map, filterAttr) {
+  const list = [...map.entries()].sort((a, b) => b[1] - a[1]);
+  if (!list.length) return emptyCard('Nenhum preenchimento', 'Nada encontrado com os filtros escolhidos.');
+  const top = list.slice(0, 6); const other = list.slice(6).reduce((a, x) => a + x[1], 0);
+  const parts = top.map(([l, v], i) => ({ v, c: CAT[i], l, attr: filterAttr && l !== 'Sem equipe' ? `data-${filterAttr}="${h(l)}"` : '' }));
+  if (other) parts.push({ v: other, c: 'var(--cat-other)', l: `Outros (${list.length - 6})` });
+  const tot = parts.reduce((a, p) => a + p.v, 0);
+  return `<div class="card pad pie-card"><div class="card-t"><b>${title}</b><span class="muted small">toque no nome para filtrar</span></div>
+    <div class="pie-row">${pie(parts, { size: 200, hole: 0.5, center: tot, sub: 'OS realizadas' })}${legend(parts, tot)}</div></div>`;
 }
 function viewEquipes({ items }) {
-  const by = new Map();
-  for (const { f } of items) { const k = f.equipe || 'Sem equipe'; const o = by.get(k) || { ok: 0, pe: 0 }; o[f.ok === 'EXECUTADO' ? 'ok' : 'pe']++; by.set(k, o); }
-  if (!by.size) return emptyCard('Nenhum preenchimento', 'Nada encontrado com os filtros escolhidos.');
-  const list = [...by.entries()].sort((a, b) => b[1].ok + b[1].pe - (a[1].ok + a[1].pe)); const max = list[0][1].ok + list[0][1].pe;
-  return `<div class="card pad"><div class="card-t"><b>OS preenchidas por equipe</b><span class="muted small">toque para filtrar</span></div>${LEG}
-    <div class="hbars">${list.map(([e, o]) => hbar(e, o.ok, o.pe, max, '', e !== 'Sem equipe' ? `data-eq="${h(e)}"` : '')).join('')}</div></div>`;
+  const m = new Map(); for (const { f } of items) if (f.ok === 'EXECUTADO') { const k = f.equipe || 'Sem equipe'; m.set(k, (m.get(k) || 0) + 1); }
+  return shareCard('OS realizadas por equipe', m, 'eq');
 }
 function viewPessoas({ items }) {
-  const by = new Map();
-  for (const { f } of items) for (const c of splitColab(f.colab)) { if (S.d.col && c !== S.d.col) continue; const o = by.get(c) || { ok: 0, pe: 0, last: 0 }; o[f.ok === 'EXECUTADO' ? 'ok' : 'pe']++; o.last = Math.max(o.last, f.at || 0); by.set(c, o); }
-  if (!by.size) return emptyCard('Nenhum colaborador', 'Nada encontrado com os filtros escolhidos.');
-  const list = [...by.entries()].sort((a, b) => b[1].ok + b[1].pe - (a[1].ok + a[1].pe)); const max = list[0][1].ok + list[0][1].pe;
-  return `<div class="card pad"><div class="card-t"><b>OS por colaborador</b><span class="muted small">${by.size} pessoas • toque para filtrar</span></div>${LEG}
-    <div class="hbars people">${list.map(([n, o]) => hbar(n, o.ok, o.pe, max, '', `data-col="${h(n)}"`)).join('')}</div></div>`;
+  const m = new Map(); for (const { f } of items) if (f.ok === 'EXECUTADO') for (const c of tokensOf(f)) { if (S.d.col && c.n !== S.d.col) continue; m.set(c.n, (m.get(c.n) || 0) + 1); }
+  return shareCard('OS realizadas por colaborador', m, 'col');
 }
 function osRow(r, f, badge = '') {
   const s = f.ok === 'EXECUTADO' ? 'ok' : 'pe';
   return `<button class="feed-i" data-k="${h(r.k)}"><span class="st ${s}">${ICON(s === 'ok' ? 'check' : 'clock')}</span>
-    <span class="fi-tx"><b>${h(r.ativo)} <em>OS ${h(r.os)}</em></b><small>${h(r.servico)}</small><small>${brDate(f.dia)} • ${h(f.colab)}${f.equipe ? ' • ' + h(f.equipe) : ''}</small></span>${badge}</button>`;
+    <span class="fi-tx"><b>${h(r.ativo)} <em>OS ${h(r.os)}</em>${isSeg(r) ? ' <span class="segb">SEG</span>' : ''}</b><small>${h(r.servico)}</small><small>${brDate(f.dia)} • ${h(f.colab)}${f.equipe ? ' • ' + h(f.equipe) : ''}</small></span>${badge}</button>`;
 }
 function viewAtencao({ items }) {
   const list = items.filter((x) => x.f.imediata === 'S' || x.f.necessidade === 'S').sort((a, b) => (b.f.at || 0) - (a.f.at || 0));
@@ -671,6 +701,96 @@ $('#dash').addEventListener('click', (e) => {
   if (t.dataset.k) openFill([t.dataset.k]);
 });
 
+// =====================================================================
+// RELATÓRIO DIÁRIO
+// =====================================================================
+const R = { dia: todayISO(), quem: 'me' };
+function isMine(f) {
+  const me = S.me; if (!me) return false;
+  return tokensOf(f).some((c) => (c.m && String(c.m) === String(me.matricula)) || keyN(c.n) === keyN(me.nome));
+}
+function repItems() {
+  const out = [];
+  for (const r of S.rows) {
+    const f = S.fills[r.k]; if (!f || f.dia !== R.dia) continue;
+    if (R.quem === 'me' && !isMine(f)) continue;
+    if (R.quem.startsWith('eq:') && f.equipe !== R.quem.slice(3)) continue;
+    if (R.quem.startsWith('col:') && !tokensOf(f).some((c) => c.n === R.quem.slice(4))) continue;
+    out.push({ r, f });
+  }
+  return out.sort((a, b) => a.r.patio.localeCompare(b.r.patio) || (a.f.hIni || '').localeCompare(b.f.hIni || ''));
+}
+function quemLabel() {
+  if (R.quem === 'me') return `${S.me.nome} (matrícula ${S.me.matricula})`;
+  if (R.quem === 'all') return 'Todos';
+  if (R.quem.startsWith('eq:')) return 'Equipe ' + R.quem.slice(3);
+  const n = R.quem.slice(4); const m = matOf(n); return n + (m ? ` (matrícula ${m})` : '');
+}
+function repSummary(items) {
+  const ok = items.filter((x) => x.f.ok === 'EXECUTADO'); const pe = items.length - ok.length;
+  const segOk = ok.filter((x) => isSeg(x.r)).length; const segTot = items.filter((x) => isSeg(x.r)).length;
+  const ini = items.map((x) => x.f.hIni).filter(Boolean).sort()[0] || ''; const fim = items.map((x) => x.f.hFim).filter(Boolean).sort().pop() || '';
+  const byP = new Map(); for (const x of ok) byP.set(x.r.patio, (byP.get(x.r.patio) || 0) + 1);
+  const imed = items.filter((x) => x.f.imediata === 'S').length; const nec = items.filter((x) => x.f.necessidade === 'S').length;
+  return { ok: ok.length, pe, segOk, segTot, ini, fim, byP, imed, nec };
+}
+function renderReport() {
+  if (!S.me) return;
+  if (!$('#rDia').value) $('#rDia').value = R.dia;
+  const cols = new Set(); const eqs = new Set();
+  for (const f of Object.values(S.fills)) if (f.dia === R.dia) { tokensOf(f).forEach((c) => cols.add(c.n)); if (f.equipe) eqs.add(f.equipe); }
+  if (S.me.equipe) eqs.add(S.me.equipe);
+  $('#rQuem').innerHTML = `<option value="me">Eu — ${h(S.me.nome)}</option><option value="all">Todos</option>` +
+    [...eqs].sort().map((e) => `<option value="eq:${h(e)}">Equipe ${h(e)}</option>`).join('') +
+    [...cols].filter((c) => keyN(c) !== keyN(S.me.nome)).sort((a, b) => a.localeCompare(b)).map((c) => `<option value="col:${h(c)}">${h(c)}</option>`).join('');
+  if (![...$('#rQuem').options].some((o) => o.value === R.quem)) R.quem = 'me';
+  $('#rQuem').value = R.quem;
+  if (!S.cycle) { $('#rep').innerHTML = emptyCard('Sem documento ativo', 'Envie a planilha do mês na aba Documento.'); $('#repAct').hidden = true; return; }
+  const items = repItems(); const sm = repSummary(items);
+  $('#repAct').hidden = !items.length;
+  if (!items.length) { $('#rep').innerHTML = emptyCard('Nada preenchido neste dia', `Não há OS com DIA ${brDate(R.dia)} para ${h(quemLabel())}.`); return; }
+  const tile = (n, l, cls = '') => `<div class="rt ${cls}"><b>${n}</b><span>${l}</span></div>`;
+  const groups = new Map(); for (const x of items) (groups.get(x.r.patio) || groups.set(x.r.patio, []).get(x.r.patio)).push(x);
+  $('#rep').innerHTML = `<article class="card pad report" id="repDoc">
+    <header class="rep-h"><img src="assets/img/mrs-mark.png" alt="MRS" width="70"><div><span class="eyebrow">Relatório diário • Cíclica ${h(S.cycle.titulo || '')}</span>
+      <h3>${brDate(R.dia)}</h3><p>${h(quemLabel())}${sm.ini ? ` • ${sm.ini} às ${sm.fim}` : ''}</p></div></header>
+    <div class="rtiles">${tile(sm.ok, 'OS realizadas', 'ok')}${tile(sm.segOk + (sm.segTot > sm.segOk ? `<small>/${sm.segTot}</small>` : ''), 'de segurança', 'seg')}${tile(sm.pe, 'pendentes', 'pe')}${tile(sm.imed + sm.nec, 'pedem atenção', 'al')}</div>
+    ${[...groups.entries()].map(([p, xs]) => `<section class="rgrp"><h4>${h(p)} <small>${xs.filter((x) => x.f.ok === 'EXECUTADO').length} realizadas de ${xs.length}</small></h4>
+      <table class="rtab"><thead><tr><th>OS</th><th>Ativo / serviço</th><th>Status</th><th>Horário</th></tr></thead><tbody>
+      ${xs.map(({ r, f }) => `<tr><td class="mono">${h(r.os)}${isSeg(r) ? '<br><span class="segb">SEG</span>' : ''}</td><td><b>${h(r.ativo)}</b><br><span>${h(r.servico)}</span>${f.imediata === 'S' || f.necessidade === 'S' ? `<br><span class="flag ${f.imediata === 'S' ? 'f1' : 'f2'}">${f.imediata === 'S' ? 'Manutenção imediata' : 'Necessidade de manutenção'}</span>` : ''}${R.quem !== 'me' ? `<br><small>${h(f.colab)}</small>` : ''}</td>
+        <td><span class="pill ${f.ok === 'EXECUTADO' ? 'ok' : 'pe'}">${f.ok === 'EXECUTADO' ? 'Executado' : 'Pendente'}</span></td><td class="mono">${h(f.hIni || '')}${f.hFim ? '–' + h(f.hFim) : ''}</td></tr>`).join('')}
+      </tbody></table></section>`).join('')}
+    <footer class="rep-f">Gerado pelo E-Cíclica em ${new Date().toLocaleString('pt-BR')}</footer></article>`;
+}
+$('#rDia').addEventListener('change', (e) => { R.dia = e.target.value || todayISO(); renderReport(); });
+$('#rQuem').addEventListener('change', (e) => { R.quem = e.target.value; renderReport(); });
+function repFileBase() { return `Relatorio_${R.dia}_${(R.quem === 'me' ? S.me.nome : quemLabel()).replace(/\s*\(.*\)/, '').replace(/[^\wÀ-ú-]+/g, '_')}`; }
+$('#rShare').addEventListener('click', async () => {
+  const items = repItems(); const sm = repSummary(items);
+  const txt = `*Relatório diário – ${brDate(R.dia)}*\n${quemLabel()}\nCíclica ${S.cycle.titulo || ''}\n\n✅ OS realizadas: ${sm.ok}\n🛡️ De segurança: ${sm.segOk}\n⏳ Pendentes: ${sm.pe}\n⚠️ Pedem atenção: ${sm.imed + sm.nec}` +
+    (sm.ini ? `\n🕒 ${sm.ini} às ${sm.fim}` : '') + (sm.byP.size ? `\n\nPor pátio: ${[...sm.byP.entries()].map(([p, n]) => `${p} (${n})`).join(', ')}` : '');
+  try { if (navigator.share) { await navigator.share({ text: txt }); return; } } catch (e) { if (e.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(txt); toast('Resumo copiado ✔'); } catch {}
+  window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank', 'noopener');
+});
+$('#rPdf').addEventListener('click', () => {
+  const t = document.title; const th = document.documentElement.dataset.theme; document.title = repFileBase();
+  document.documentElement.dataset.theme = 'light'; document.body.classList.add('print-rep');
+  setTimeout(() => { window.print(); document.body.classList.remove('print-rep'); document.documentElement.dataset.theme = th; document.title = t; }, 50);
+});
+$('#rXlsx').addEventListener('click', async () => {
+  const items = repItems(); const sm = repSummary(items);
+  const rows = [[`Relatório diário — ${brDate(R.dia)}`], [quemLabel()], [`Cíclica ${S.cycle.titulo || ''}`], [],
+    ['OS realizadas', sm.ok], ['De segurança', sm.segOk], ['Pendentes', sm.pe], ['Pedem atenção', sm.imed + sm.nec], ['Horário', sm.ini ? `${sm.ini} às ${sm.fim}` : ''], [],
+    ['PÁTIO', 'ATIVO', 'OS', 'SERVIÇO', 'DESCRIÇÃO', 'SEGURANÇA', 'OK', 'H INÍCIO', 'H FIM', 'MANUT. IMEDIATA', 'NECESSIDADE', 'COLABORADORES', 'MATRÍCULAS', 'EQUIPE']];
+  const headRow = rows.length - 1;
+  for (const { r, f } of items) { const t = tokensOf(f); rows.push([r.patio, r.ativo, r.os, r.servico, r.desc, isSeg(r) ? 'SIM' : '', f.ok, f.hIni || '', f.hFim || '', f.imediata || '', f.necessidade || '', t.map((c) => c.n).join(', '), t.map((c) => c.m || '-').join(', '), f.equipe || '']); }
+  const { simpleXlsx } = await import('./xlsx.js?v=6');
+  const bytes = await simpleXlsx(JSZip, [{ name: 'Relatório ' + brDate(R.dia).replace(/\//g, '-'), rows, head: [headRow], title: [0], widths: [10, 26, 12, 50, 36, 11, 12, 9, 9, 10, 11, 30, 22, 9] }]);
+  download(bytes, repFileBase() + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  toast('Relatório baixado ✔');
+});
+
 // ---------- exportar ----------
 function exportName(c) { return (c.fileName || 'CICLICA.xlsx').replace(/\.xlsx$/i, '') + '_PREENCHIDA.xlsx'; }
 function renderExport() {
@@ -682,12 +802,16 @@ function renderExport() {
 }
 $('#exEquipe').checked = ls.get('exEquipe', true);
 $('#exEquipe').addEventListener('change', (e) => ls.set('exEquipe', e.target.checked));
+$('#exMats').checked = ls.get('exMats', true);
+$('#exMats').addEventListener('change', (e) => ls.set('exMats', e.target.checked));
 async function doExport(cycle, rows, fills, btn) {
   btn && (btn.disabled = true); toast('Gerando planilha…', 8000);
   try {
     const bytes = await S.store.getFile(cycle.id);
     if (!bytes) throw new Error('Arquivo original não encontrado.');
-    const out = await exportWorkbook(JSZip, bytes, rows, fills, { equipe: $('#exEquipe').checked });
+    const withMats = {};
+    for (const [k, f] of Object.entries(fills)) { const t = tokensOf(f); withMats[k] = { ...f, colab: t.map((c) => c.n).join(', '), mats: t.map((c) => c.m || '-').join(', ') }; }
+    const out = await exportWorkbook(JSZip, bytes, rows, withMats, { equipe: $('#exEquipe').checked, mats: $('#exMats').checked });
     download(out.bytes, exportName(cycle), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     toast('Planilha baixada ✔');
   } catch (e) { console.error(e); toast('Erro ao exportar: ' + e.message, 5000); }

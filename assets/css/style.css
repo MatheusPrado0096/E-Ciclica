@@ -639,6 +639,121 @@ button.kpi:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
   .filt-btn .n:empty{display:none}
   .filt-btn .chev{transition:transform .25s var(--ease)}
   .filt-btn[aria-expanded=true] .chev{transform:rotate(180deg)}
-  .filters:not(.open){display:none}
+  #dFilters:not(.open){display:none}
 }
 #dFiltSum{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* =====================================================================
+   v3 — pizzas, relatório diário, matrícula dos colaboradores
+   ===================================================================== */
+:root{--cat1:#2a78d6;--cat2:#eb6834;--cat3:#1baf7a;--cat4:#eda100;--cat5:#e87ba4;--cat6:#6250d6;--cat-other:#9aa7b4}
+:root[data-theme=dark]{--cat1:#3987e5;--cat2:#d95926;--cat3:#199e70;--cat4:#c98500;--cat5:#d55181;--cat6:#9085e9;--cat-other:#52667a}
+.pie{position:relative;flex:none}
+.pie svg{width:100%;height:100%;display:block;overflow:visible}
+.pie circle{transition:stroke-width .2s;cursor:default}
+.pie circle:hover{filter:brightness(1.08)}
+.pie-c{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none}
+.pie-c b{font-size:1.9rem;font-weight:800;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+.pie-c small{font-size:.72rem;font-weight:700;color:var(--muted);margin-top:4px}
+.pie-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.pie-card .card-t b{display:flex;align-items:center;gap:8px}
+.pie-card .card-t .ic{color:var(--primary)}
+.pie-row{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.pleg{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;flex:1;min-width:170px}
+.pleg li{display:grid;grid-template-columns:12px 1fr auto 44px;align-items:center;gap:10px;font-size:.88rem;padding:4px 6px;border-radius:8px}
+.pleg li[data-eq],.pleg li[data-col]{cursor:pointer}
+.pleg li[data-eq]:hover,.pleg li[data-col]:hover{background:color-mix(in srgb,var(--text) 6%,transparent)}
+.pleg i{width:12px;height:12px;border-radius:4px}
+.pleg span{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pleg b{font-variant-numeric:tabular-nums}
+.pleg small{color:var(--muted);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.pleg.inline{flex-direction:row;flex-wrap:wrap;gap:4px 16px;margin:-4px 0 14px}
+.pleg.inline li{grid-template-columns:12px auto auto;padding:0}
+.pleg.inline small{display:none}
+.mini-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px}
+.mini{display:flex;flex-direction:column;align-items:center;gap:3px;padding:14px 8px 12px;border-radius:16px;border:1px solid var(--line);background:var(--surface-2);transition:transform .2s var(--ease),box-shadow .2s}
+.mini:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.mini .pie{margin-bottom:6px}
+.mini .pie-c b{font-size:1.1rem}
+.mini b{font-size:.95rem}
+.mini small{font-size:.74rem;color:var(--muted);font-weight:600}
+.mini .segs{display:flex;align-items:center;gap:4px}
+.mini .segs .ic{width:12px;height:12px}
+.alert-row{display:flex;align-items:center;gap:14px;text-align:left;width:100%}
+.alert-row .ar-ic{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;flex:none;background:color-mix(in srgb,var(--danger) 13%,transparent);color:var(--danger)}
+.alert-row .ar-tx{flex:1;display:flex;flex-direction:column;gap:2px}
+.alert-row small{color:var(--muted)}
+.segb{display:inline-block;padding:1px 6px;border-radius:6px;font-size:.62rem;font-weight:800;letter-spacing:.06em;background:color-mix(in srgb,var(--cat1) 15%,transparent);color:var(--cat1);vertical-align:1px}
+.it-os{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.chip-seg{display:inline-flex;align-items:center}
+
+/* colaboradores + matrícula */
+#fColab{min-height:46px;cursor:default}
+.tok em{font-style:normal;font-weight:600;font-size:.74rem;opacity:.8;margin-left:4px;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.18)}
+.tok em.nomat{background:rgba(255,120,60,.35)}
+.add-colab{display:grid;grid-template-columns:1fr 130px 46px;gap:8px}
+.add-colab input{min-width:0;height:46px;padding:0 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:.98rem}
+.add-colab input:focus{outline:0;border-color:var(--primary);box-shadow:var(--ring)}
+.add-colab .btn{min-height:46px;padding:0;flex:none}
+
+/* relatório diário */
+.rel-f .sel{max-width:260px}
+.report{gap:16px;display:flex;flex-direction:column}
+.rep-h{display:flex;align-items:center;gap:16px;padding-bottom:14px;border-bottom:2px solid var(--yellow)}
+.rep-h img{flex:none}
+.rep-h h3{font-size:1.6rem;font-weight:800;letter-spacing:-.02em;margin:2px 0}
+.rep-h p{color:var(--muted);font-weight:600;font-size:.9rem}
+.rtiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.rt{padding:12px 14px;border-radius:14px;background:var(--surface-2);border:1px solid var(--line);display:flex;flex-direction:column;border-top:4px solid var(--line)}
+.rt b{font-size:1.7rem;font-weight:800;line-height:1.1;font-variant-numeric:tabular-nums}
+.rt b small{font-size:.9rem;color:var(--muted)}
+.rt span{font-size:.8rem;font-weight:700;color:var(--muted)}
+.rt.ok{border-top-color:var(--c-ok)}.rt.seg{border-top-color:var(--cat1)}.rt.pe{border-top-color:var(--c-pe)}.rt.al{border-top-color:var(--danger)}
+.rgrp h4{font-size:1rem;font-weight:800;margin:4px 0 8px;display:flex;align-items:baseline;gap:8px}
+.rgrp h4 small{font-size:.78rem;color:var(--muted);font-weight:600}
+.rtab{width:100%;border-collapse:collapse;font-size:.84rem}
+.rtab th{text-align:left;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 8px;border-bottom:1px solid var(--line)}
+.rtab td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+.rtab td span{color:var(--muted)}
+.rtab .mono{font-family:ui-monospace,Consolas,monospace;font-weight:700;white-space:nowrap}
+.rtab .pill{font-size:.72rem;font-weight:800;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.rtab .flag{display:inline-block;margin-top:4px}
+.rep-f{font-size:.74rem;color:var(--muted);text-align:right}
+.rep-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+.rep-actions .btn{flex:1 1 180px}
+
+@media(max-width:720px){
+  .pie-grid{grid-template-columns:1fr}
+  .pie-row{gap:16px}
+  .rtiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .rtab th:nth-child(4),.rtab td:nth-child(4){display:none}
+  .add-colab{grid-template-columns:1fr 104px 46px}
+  .tab{font-size:.66rem;padding:8px 2px}
+}
+
+/* impressão do relatório (Baixar PDF) */
+@media print{
+  body.print-rep{background:#fff!important;padding:0}
+  body.print-rep::before,body.print-rep .topbar,body.print-rep .tabs,body.print-rep .foot,body.print-rep .local-banner,body.print-rep .section-head,
+  body.print-rep .filters,body.print-rep .rep-actions,body.print-rep .selbar,body.print-rep .toast,body.print-rep #tip{display:none!important}
+  body.print-rep .panel:not(#relatorio){display:none!important}
+  body.print-rep main{padding:0;max-width:none}
+  body.print-rep .report{box-shadow:none;border:0;padding:0;color:#000;background:#fff;animation:none}
+  body.print-rep .rt,body.print-rep .rtab td{color:#000}
+  body.print-rep .rgrp{break-inside:avoid-page}
+  body.print-rep .rtab tr{break-inside:avoid}
+  @page{margin:14mm}
+}
+.alert-row{flex-direction:row}
+@media screen and (max-width:720px){
+  .rtab thead{display:none}
+  .rtab,.rtab tbody{display:block}
+  .rtab tr{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .rtab td{border:0;padding:0}
+  .rtab td:nth-child(1){grid-column:1;grid-row:1}
+  .rtab td:nth-child(3){grid-column:2;grid-row:1;text-align:right}
+  .rtab td:nth-child(2){grid-column:1/-1;grid-row:2}
+  .rtab td:nth-child(4){display:block;grid-column:1/-1;grid-row:3;font-size:.78rem;color:var(--muted)}
+  .rtab td:nth-child(1) br{display:none}
+  .rtab td:nth-child(1) .segb{margin-left:6px}
+}
