@@ -1,6 +1,6 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, norm } from './xlsx.js';
-import { createLocalStore } from './store-local.js';
+import { parseWorkbook, buildRows, exportWorkbook, norm } from './xlsx.js?v=4';
+import { createLocalStore } from './store-local.js?v=4';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -81,7 +81,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=4');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {

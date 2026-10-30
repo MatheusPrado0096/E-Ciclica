@@ -67,7 +67,7 @@ export function createLocalStore(cfg) {
 
     isUnlocked: unlocked,
     async unlock(senha) {
-      if ((await sha256b64(senha)) !== UPLOAD_HASH) throw new Error('Senha incorreta.');
+      if ((await sha256b64(senha)) !== UPLOAD_HASH) throw new Error('Senha incorreta (modo local).');
       try { sessionStorage.setItem(UNLOCK, '1'); } catch {}
     },
     lock() { try { sessionStorage.removeItem(UNLOCK); } catch {} },

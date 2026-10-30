@@ -91,7 +91,7 @@ export async function createFirebaseStore(cfg) {
     unlock: wrap(async (senha) => {
       const u = await ensureAuth();
       try { await F.setDoc(d('uploadGrants', u.uid), { chave: senha, at: F.serverTimestamp() }); }
-      catch (e) { if (e.code === 'permission-denied') throw new Error('Senha incorreta.'); throw e; }
+      catch (e) { if (e.code === 'permission-denied') throw new Error('Senha recusada pelo servidor. Se a senha estiver certa, publique de novo as regras (firestore.rules) no Firebase.'); throw e; }
       try { sessionStorage.setItem(UNLOCK, '1'); } catch {}
     }),
     lock() { try { sessionStorage.removeItem(UNLOCK); } catch {} },
