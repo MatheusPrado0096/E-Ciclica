@@ -1,7 +1,7 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=12';
-import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=12';
-import { createLocalStore } from './store-local.js?v=12';
+import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=13';
+import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=13';
+import { createLocalStore } from './store-local.js?v=13';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -82,7 +82,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js?v=12');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=13');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {
@@ -351,15 +351,15 @@ const sk = (r) => gk(r) + '|' + tipoOf(r);
 const TIPOS = [['cdv', 'Circuitos de via', 'track', 'Circuitos'], ['sin', 'Sinaleiros', 'signal', 'Sinaleiros'], ['mch', 'MCH — máquinas de chave', 'switch', 'MCH'],
   ['bdd', 'Barras detetoras', 'radar', 'Barras det.'], ['out', 'Demais ativos', 'list', 'Demais']];
 const abrigoNome = (g) => (g && g !== '—' ? 'Abrigo ' + g : 'Outros ativos');
-S.open = new Set(ls.get('abOpen', [])); S.subClosed = new Set();
-const autoOpen = () => !!S.f.q.trim() || S.filtered.length <= 40; // pesquisando ou poucas OS: tudo aberto
+S.open = new Set(); S.subOpen = new Set(); // ao abrir o site, todos os cards começam recolhidos
+const autoOpen = () => !!S.f.q.trim(); // só a pesquisa abre os cards sozinha
 const isOpen = (g) => S.open.has(g) || autoOpen();
-function saveOpen() { ls.set('abOpen', [...S.open].slice(-200)); }
+function saveOpen() {}
 function renderMore() {} // lista agora é desenhada inteira (pátios e abrigos começam recolhidos)
 // ---- card do PÁTIO (por fora de tudo) ----
 const pk = (r) => r.patio;
-S.openP = new Set(ls.get('ptOpen', []));
-const isOpenP = (p) => S.openP.has(p) || autoOpen() || S.f.patio === p;
+S.openP = new Set();
+const isOpenP = (p) => S.openP.has(p) || autoOpen();
 function patioHtml(p, items) {
   const s = groupStats(p, pk); const open = isOpenP(p);
   const abrigos = []; let i = 0;
@@ -379,8 +379,8 @@ function rerenderPatio(p) {
   const items = S.filtered.filter((r) => r.patio === p); if (items.length) el.outerHTML = patioHtml(p, items);
 }
 function togglePatio(p) {
-  if (autoOpen() || S.f.patio === p) return toast(S.f.patio === p ? 'Pátio escolhido no filtro fica aberto.' : 'Com pesquisa ativa os cards ficam abertos.');
-  if (S.openP.has(p)) S.openP.delete(p); else S.openP.add(p); ls.set('ptOpen', [...S.openP]); rerenderPatio(p);
+  if (autoOpen()) return toast('Com pesquisa ativa os cards ficam abertos.');
+  if (S.openP.has(p)) S.openP.delete(p); else S.openP.add(p); rerenderPatio(p);
 }
 function updPatioHead(p) {
   const el = $(`.pt[data-p="${CSS.escape(p)}"]`); if (!el) return;
@@ -416,7 +416,7 @@ function groupHtml(r, g, items) {
     if (!temSub) body = ativosHtml(items);
     else for (const [t, label, ic] of TIPOS) {
       if (!byT[t].length) continue;
-      const key = g + '|' + t; const st = groupStats(key, sk); const sOpen = !S.subClosed.has(key);
+      const key = g + '|' + t; const st = groupStats(key, sk); const sOpen = S.subOpen.has(key) || autoOpen();
       const nat = new Set(byT[t].map((x) => x.ativo)).size;
       body += `<div class="sub t-${t}${sOpen ? '' : ' closed'}" data-s="${h(key)}"><div class="sub-h" data-sh="${h(key)}">
         <span class="${cbCls(st)}">${ICON('check')}</span><span class="sub-ic">${ICON(ic)}</span>
@@ -443,13 +443,15 @@ function toggleGroup(g) {
   if (isOpen(g) && autoOpen()) return toast('Com pesquisa ativa os cards ficam abertos.');
   if (S.open.has(g)) S.open.delete(g); else S.open.add(g); saveOpen(); rerenderGroup(g);
 }
-function toggleSub(key) { if (S.subClosed.has(key)) S.subClosed.delete(key); else S.subClosed.add(key); rerenderGroup(key.split('|').slice(0, 2).join('|')); }
+function toggleSub(key) { if (autoOpen()) return toast('Com pesquisa ativa os cards ficam abertos.'); if (S.subOpen.has(key)) S.subOpen.delete(key); else S.subOpen.add(key); rerenderGroup(key.split('|').slice(0, 2).join('|')); }
 $('#count').addEventListener('click', (e) => {
   const b = e.target.closest('[data-xp]'); if (!b) return;
   const gs = new Set(S.filtered.map(gk));
   const ps = new Set(S.filtered.map(pk));
   if (b.dataset.xp === '1') { gs.forEach((g) => S.open.add(g)); ps.forEach((p) => S.openP.add(p)); } else { gs.forEach((g) => S.open.delete(g)); ps.forEach((p) => S.openP.delete(p)); }
-  S.subClosed.clear(); saveOpen(); ls.set('ptOpen', [...S.openP]); renderList();
+  S.subOpen.clear();
+  if (b.dataset.xp === '1') S.filtered.forEach((r) => S.subOpen.add(sk(r)));
+  renderList();
 });
 function updGroupHead(el) {
   const s = groupStats(el.dataset.g); const cb = $('.grp-h .cb', el);
@@ -925,7 +927,7 @@ $('#rXlsx').addEventListener('click', async () => {
     ['PÁTIO', 'ATIVO', 'OS', 'SERVIÇO', 'DESCRIÇÃO', 'SEGURANÇA', 'OK', 'H INÍCIO', 'H FIM', 'MANUT. IMEDIATA', 'NECESSIDADE', 'COLABORADORES', 'MATRÍCULAS', 'EQUIPE']];
   const headRow = rows.length - 1;
   for (const { r, f } of items) { const t = tokensOf(f); rows.push([r.patio, r.ativo, r.os, r.servico, r.desc, isSeg(r) ? 'SIM' : '', f.ok, f.hIni || '', f.hFim || '', f.imediata || '', f.necessidade || '', t.map((c) => c.n).join(', '), t.map((c) => c.m || '-').join(', '), f.equipe || '']); }
-  const { simpleXlsx } = await import('./xlsx.js?v=12');
+  const { simpleXlsx } = await import('./xlsx.js?v=13');
   const bytes = await simpleXlsx(JSZip, [{ name: 'Relatório ' + brDate(R.dia).replace(/\//g, '-'), rows, head: [headRow], title: [0], widths: [10, 26, 12, 50, 36, 11, 12, 9, 9, 10, 11, 30, 22, 9] }]);
   download(bytes, repFileBase() + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   toast('Relatório baixado ✔');
