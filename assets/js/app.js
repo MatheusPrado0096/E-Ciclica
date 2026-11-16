@@ -1,7 +1,7 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=11';
-import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=11';
-import { createLocalStore } from './store-local.js?v=11';
+import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=12';
+import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=12';
+import { createLocalStore } from './store-local.js?v=12';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -82,7 +82,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js?v=11');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=12');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {
@@ -342,9 +342,14 @@ function itemHtml(r) {
 // Dentro do abrigo: card de SINALEIROS, card de MCH e "Demais ativos". Todos recolhem/expandem.
 const gk = (r) => r.patio + '|' + (r.grupo || '—');
 const ak = (r) => r.patio + '|' + r.ativo;
-const tipoOf = (r) => r.tipo || (r.tipo = /SINALEIRO/i.test(r.ativo || '') ? 'sin' : /\bMCH\b/i.test(r.ativo || '') ? 'mch' : 'out');
+// tipo do ativo: CDV → circuitos de via; BDD ou "D RADIO KM…" → barras detetoras; SINALEIRO; MCH; resto → demais
+function tipoOf(r) {
+  if (r.tipo) return r.tipo; const a = String(r.ativo || '').toUpperCase();
+  return (r.tipo = /SINALEIRO/.test(a) ? 'sin' : /\bMCH\b/.test(a) ? 'mch' : /\bCDV\b/.test(a) ? 'cdv' : /BDD|\bRADIO\b/.test(a) ? 'bdd' : 'out');
+}
 const sk = (r) => gk(r) + '|' + tipoOf(r);
-const TIPOS = [['sin', 'Sinaleiros', 'signal'], ['mch', 'MCH — máquinas de chave', 'switch'], ['out', 'Demais ativos', 'list']];
+const TIPOS = [['cdv', 'Circuitos de via', 'track', 'Circuitos'], ['sin', 'Sinaleiros', 'signal', 'Sinaleiros'], ['mch', 'MCH — máquinas de chave', 'switch', 'MCH'],
+  ['bdd', 'Barras detetoras', 'radar', 'Barras det.'], ['out', 'Demais ativos', 'list', 'Demais']];
 const abrigoNome = (g) => (g && g !== '—' ? 'Abrigo ' + g : 'Outros ativos');
 S.open = new Set(ls.get('abOpen', [])); S.subClosed = new Set();
 const autoOpen = () => !!S.f.q.trim() || S.filtered.length <= 40; // pesquisando ou poucas OS: tudo aberto
@@ -402,10 +407,10 @@ function ativosHtml(items) {
 function groupHtml(r, g, items) {
   const s = groupStats(g); const gr = r.grupo || ''; const open = isOpen(g);
   const ativos = new Set(items.map((x) => x.ativo)).size;
-  const byT = { sin: [], mch: [], out: [] }; items.forEach((it) => byT[tipoOf(it)].push(it));
-  const temSub = byT.sin.length || byT.mch.length;
-  const resumo = TIPOS.filter(([t]) => byT[t].length).map(([t, l, ic]) => { const d = byT[t].filter((x) => statusOf(x.k) === 'ok').length;
-    return `<span class="tchip t-${t}">${ICON(ic)}${t === 'out' ? 'Demais' : t === 'sin' ? 'Sinaleiros' : 'MCH'} <b>${d}/${byT[t].length}</b></span>`; }).join('');
+  const byT = { cdv: [], sin: [], mch: [], bdd: [], out: [] }; items.forEach((it) => byT[tipoOf(it)].push(it));
+  const temSub = byT.cdv.length || byT.sin.length || byT.mch.length || byT.bdd.length;
+  const resumo = TIPOS.filter(([t]) => byT[t].length).map(([t, , ic, curto]) => { const d = byT[t].filter((x) => statusOf(x.k) === 'ok').length;
+    return `<span class="tchip t-${t}">${ICON(ic)}${curto} <b>${d}/${byT[t].length}</b></span>`; }).join('');
   let body = '';
   if (open) {
     if (!temSub) body = ativosHtml(items);
@@ -920,7 +925,7 @@ $('#rXlsx').addEventListener('click', async () => {
     ['PÁTIO', 'ATIVO', 'OS', 'SERVIÇO', 'DESCRIÇÃO', 'SEGURANÇA', 'OK', 'H INÍCIO', 'H FIM', 'MANUT. IMEDIATA', 'NECESSIDADE', 'COLABORADORES', 'MATRÍCULAS', 'EQUIPE']];
   const headRow = rows.length - 1;
   for (const { r, f } of items) { const t = tokensOf(f); rows.push([r.patio, r.ativo, r.os, r.servico, r.desc, isSeg(r) ? 'SIM' : '', f.ok, f.hIni || '', f.hFim || '', f.imediata || '', f.necessidade || '', t.map((c) => c.n).join(', '), t.map((c) => c.m || '-').join(', '), f.equipe || '']); }
-  const { simpleXlsx } = await import('./xlsx.js?v=11');
+  const { simpleXlsx } = await import('./xlsx.js?v=12');
   const bytes = await simpleXlsx(JSZip, [{ name: 'Relatório ' + brDate(R.dia).replace(/\//g, '-'), rows, head: [headRow], title: [0], widths: [10, 26, 12, 50, 36, 11, 12, 9, 9, 10, 11, 30, 22, 9] }]);
   download(bytes, repFileBase() + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   toast('Relatório baixado ✔');

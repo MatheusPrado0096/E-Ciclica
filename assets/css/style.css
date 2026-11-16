@@ -816,10 +816,10 @@ button.kpi:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
 .tchip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.76rem;font-weight:700;background:var(--surface);border:1px solid var(--line);color:var(--muted)}
 .tchip b{color:var(--text);font-variant-numeric:tabular-nums}
 .tchip .ic{width:14px;height:14px}
-.t-sin .ic,.sub.t-sin .sub-ic{color:#c0392b}
-.t-mch .ic,.sub.t-mch .sub-ic{color:#1d5fa8}
-:root[data-theme=dark] .t-sin .ic,:root[data-theme=dark] .sub.t-sin .sub-ic{color:#ff7b6b}
-:root[data-theme=dark] .t-mch .ic,:root[data-theme=dark] .sub.t-mch .sub-ic{color:#6aa8ff}
+.tchip.t-sin .ic,.sub.t-sin > .sub-h .sub-ic{color:#c0392b}
+.tchip.t-mch .ic,.sub.t-mch > .sub-h .sub-ic{color:#1d5fa8}
+:root[data-theme=dark] .tchip.t-sin .ic,:root[data-theme=dark] .sub.t-sin > .sub-h .sub-ic{color:#ff7b6b}
+:root[data-theme=dark] .tchip.t-mch .ic,:root[data-theme=dark] .sub.t-mch > .sub-h .sub-ic{color:#6aa8ff}
 .grp-b.has-sub{display:flex;flex-direction:column;gap:10px;padding:10px;background:color-mix(in srgb,var(--gc) 14%,var(--surface))}
 :root[data-theme=dark] .grp-b.has-sub{background:color-mix(in srgb,var(--gc) 5%,var(--surface))}
 .sub{border-radius:16px;background:var(--surface);border:1px solid var(--line);overflow:hidden;box-shadow:var(--shadow-sm)}
@@ -864,3 +864,8 @@ button.kpi:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
 :root[data-theme=dark] .pt-b{background:var(--surface-2)}
 .pt-b .grp{animation:none}
 @media(max-width:720px){.pt-prog{display:none}.pt-n b{font-size:1.1rem}.pt-b{padding:8px}}
+/* v7 — cards de Circuitos de via e Barras detetoras */
+.tchip.t-cdv .ic,.sub.t-cdv > .sub-h .sub-ic{color:#14995a}
+.tchip.t-bdd .ic,.sub.t-bdd > .sub-h .sub-ic{color:#8e44ad}
+:root[data-theme=dark] .tchip.t-cdv .ic,:root[data-theme=dark] .sub.t-cdv > .sub-h .sub-ic{color:#43d68b}
+:root[data-theme=dark] .tchip.t-bdd .ic,:root[data-theme=dark] .sub.t-bdd > .sub-h .sub-ic{color:#c39bff}
