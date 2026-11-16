@@ -6,7 +6,7 @@ HTML + CSS + JavaScript puro, **sem build**. Roda no **GitHub Pages**.
 ## O que tem
 - **Entrada por matrícula** — todos têm o mesmo acesso. No primeiro acesso a pessoa informa **matrícula + nome** (e, se quiser, a equipe); depois entra só com a matrícula. Nome e equipe podem ser alterados em “Meus dados” (botão com as iniciais).
 - **Senha de upload** — enviar, ativar ou excluir a planilha do mês e editar as equipes só funciona depois de digitar a senha de upload na aba **Documento** (fica liberado até sair/fechar o navegador). Com Firebase, a senha é conferida pelo servidor (nas regras), não só pela tela.
-- **Lista das OS** agrupada por pátio → ativo, com pesquisa (OS, ativo, serviço, colaborador), **seletor de pátio com pesquisa** (digite “FP” e veja FPA, FPI… com o andamento de cada um), filtros por situação e aba.
+- **Lista das OS em cards por abrigo**: pátio → abrigo (grupo 05, 10, 15… 45 tirado do nome do ativo, com a cor de cada abrigo) → ativo → OS; ativos sem número de abrigo (LDE, TF, MED, NO BREAK…) ficam num card “Outros ativos” no fim do pátio. Tocar no cabeçalho do abrigo ou no nome de um ativo seleciona todas as OS dele para preencher em lote. Também tem com pesquisa (OS, ativo, serviço, colaborador), **seletor de pátio com pesquisa** (digite “FP” e veja FPA, FPI… com o andamento de cada um), filtros por situação e aba.
 - **Preenchimento** de uma OS: OK (Executado/Pendente), Dia, H início, H fim (botão “agora”), Manutenção imediata (S/N), Necessidade de manutenção (S/N), Colaboradores **com matrícula** (ao digitar um nome cadastrado a matrícula entra sozinha; para quem não tem cadastro, digite nome e matrícula) e Equipe.
 - **Confirmação antes de alterar**: ao tocar numa OS já preenchida, aparece um aviso com o preenchimento atual perguntando se deseja alterar. No preenchimento em lote, dá para escolher alterar também as já preenchidas ou só preencher as que faltam.
 - **Só dois estados**: toda OS que não foi marcada como **EXECUTADO** é **PENDENTE** (inclusive as que ninguém preencheu ainda). Na exportação, essas OS saem com **PENDENTE** na coluna OK.
@@ -14,6 +14,7 @@ HTML + CSS + JavaScript puro, **sem build**. Roda no **GitHub Pages**.
 - **Preencher várias OS de uma vez**: toque em **Selecionar** (ou segure o dedo numa OS), marque as OS — tocar no cabeçalho de um ativo marca todas dele, e “Todas da lista” marca tudo o que está filtrado — e toque **Preencher**.
 - **Painel de monitoramento** em gráficos de pizza, com filtros de **período**, **pátio**, **equipe** e **colaborador**, separado em visões: Visão geral (% de OS realizadas e % de OS de segurança realizadas), Pátios (uma pizza por pátio), Equipes, Colaboradores, Atenção e Atividade.
 - **Relatório diário**: escolha o dia e de quem (eu, minha equipe, todos ou um colaborador) e veja quantas OS foram realizadas, quantas de segurança, pendentes e as que pedem atenção, com a lista por pátio. Dá para **compartilhar o resumo** (WhatsApp), **baixar em PDF** ou **baixar em Excel**.
+- **Planilha organizada para impressão** (aba Exportar): 2 abas (“TODOS JUNTOS” = 1º dia útil e “5° DIA ÚTIL - TODOS”), 12 colunas, ordenada por pátio → abrigo → ativo → OS, cores do abrigo em PATIO/ATIVO, borda grossa no início de cada abrigo, A4 paisagem com as colunas em 1 página de largura, cabeçalho repetido, filtros, 1ª linha congelada, rodapé “Página X de Y” e cada pátio começando numa página nova. Ao baixar, mostra a conferência (registros por aba e o que está fora do padrão). Opcional: incluir os preenchimentos.
 - **Exportar**: baixa o **mesmo arquivo .xlsx enviado**, com as colunas preenchidas (mantém abas, cores, filtros, larguras). As abas de cada pátio (FCA, FEA, …) também recebem os preenchimentos. Opcional: colunas **MATRÍCULAS** (na mesma ordem dos nomes em COLABORADORES) e **EQUIPE** no final.
 - Funciona **offline** depois do primeiro acesso (com Firebase): o que for preenchido sem sinal sobe sozinho quando a internet volta.
 
@@ -67,7 +68,8 @@ config.js                  ⚙️ dados do Firebase e equipes padrão
 firestore.rules            regras de segurança (colar no Firebase)
 assets/css/style.css       estilos (identidade MRS, tema claro/escuro)
 assets/js/app.js           interface: login, lista, preenchimento, lote, painel, exportação, documento
-assets/js/xlsx.js          leitura da planilha e geração do .xlsx preenchido
+assets/js/xlsx.js          leitura da planilha, .xlsx preenchido e planilha organizada
+assets/js/organizar.js     regras de abrigo (grupo) e ordenação
 assets/js/store-firebase.js  dados no Firebase (equipe)
 assets/js/store-local.js     dados no navegador (modo demonstração)
 assets/vendor/jszip.min.js   JSZip 3.10.1 (MIT)

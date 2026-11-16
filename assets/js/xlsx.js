@@ -249,7 +249,47 @@ class StylePool {
     this.added.push(xf); this.cache.set(key, idx);
     return idx;
   }
+  // ---- cores e bordas (planilha organizada) ----
+  xfAttr(s, name) { const xf = this.xfList[+(s ?? 0)] || ''; const m = xf.match(new RegExp('\\s' + name + '="(\\d+)"')); return m ? +m[1] : 0; }
+  hasBorder(s) {
+    const id = this.xfAttr(s, 'borderId'); if (!id) return false;
+    const b = this.borders()[id] || ''; return /style="/.test(b);
+  }
+  borders() {
+    if (!this._borders) { const m = this.xml.match(/<borders\b[^>]*>([\s\S]*?)<\/borders>/); this._borders = m ? [...m[1].matchAll(/<border\b[^>]*?(?:\/>|>[\s\S]*?<\/border>)/g)].map((x) => x[0]) : []; this._bAdded = []; }
+    return this._borders;
+  }
+  addBorderTop(id) {
+    const key = 'b' + id; this._bc ||= new Map(); if (this._bc.has(key)) return this._bc.get(key);
+    let b = this.borders()[id] || '<border/>';
+    if (b.endsWith('/>')) b = b.replace(/\s*\/>$/, '><left/><right/><top/><bottom/><diagonal/></border>');
+    const top = '<top style="medium"><color indexed="64"/></top>';
+    if (/<top\b[^>]*?(?:\/>|>[\s\S]*?<\/top>)/.test(b)) b = b.replace(/<top\b[^>]*?(?:\/>|>[\s\S]*?<\/top>)/, top);
+    else if (/<bottom\b/.test(b)) b = b.replace(/<bottom\b/, top + '<bottom');
+    else b = b.replace(/<\/border>$/, top + '</border>');
+    const nid = this.borders().length + this._bAdded.length; this._bAdded.push(b); this._bc.set(key, nid); return nid;
+  }
+  addFill(rgb) {
+    this._fc ||= new Map(); if (this._fc.has(rgb)) return this._fc.get(rgb);
+    const m = this.xml.match(/<fills\b[^>]*count="(\d+)"/); const base = m ? +m[1] : 0;
+    this._fAdded ||= []; const id = base + this._fAdded.length;
+    this._fAdded.push(`<fill><patternFill patternType="solid"><fgColor rgb="FF${rgb}"/><bgColor indexed="64"/></patternFill></fill>`);
+    this._fc.set(rgb, id); return id;
+  }
+  /** estilo s com cor de fundo e/ou borda superior grossa */
+  withMods(s, { fill, top } = {}) {
+    if (!fill && !top) return s;
+    const key = (s ?? '0') + '|f' + (fill || '') + '|t' + (top ? 1 : 0);
+    if (this.cache.has(key)) return this.cache.get(key);
+    let xf = this.xfList[+(s ?? 0)] || '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>';
+    if (fill) { const fid = fill === 'none' ? 0 : this.addFill(fill); xf = xf.replace(/\sfillId="\d+"/, '').replace(/\sapplyFill="\d"/, '').replace(/^<xf\b/, `<xf fillId="${fid}" applyFill="1"`); }
+    if (top) { const bid = this.addBorderTop(this.xfAttr(s, 'borderId')); xf = xf.replace(/\sborderId="\d+"/, '').replace(/\sapplyBorder="\d"/, '').replace(/^<xf\b/, `<xf borderId="${bid}" applyBorder="1"`); }
+    const idx = this.xfList.length + this.added.length; this.added.push(xf); this.cache.set(key, idx); return idx;
+  }
   out() {
+    if (this._fAdded?.length) this.xml = this.xml.replace(/<\/fills>/, this._fAdded.join('') + '</fills>').replace(/(<fills\b[^>]*count=")(\d+)"/, (m, a, n) => a + (+n + this._fAdded.length) + '"');
+    if (this._bAdded?.length) this.xml = this.xml.replace(/<\/borders>/, this._bAdded.join('') + '</borders>').replace(/(<borders\b[^>]*count=")(\d+)"/, (m, a, n) => a + (+n + this._bAdded.length) + '"');
+    this._fAdded = []; this._bAdded = [];
     if (!this.added.length) return this.xml;
     return this.xml.replace(/<\/cellXfs>/, this.added.join('') + '</cellXfs>')
       .replace(/(<cellXfs\b[^>]*count=")(\d+)"/, (m, a, n) => a + (+n + this.added.length) + '"');
@@ -416,3 +456,168 @@ export async function simpleXlsx(JSZip, sheets) {
   });
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
+
+// ---------- planilha ORGANIZADA para impressão ----------
+// 2 abas ("TODOS JUNTOS" = 1º dia útil, "5° DIA ÚTIL - TODOS" = 5º dia útil), 12 colunas,
+// ordenada por pátio → abrigo (grupo) → ativo → OS, cores do grupo em PATIO/ATIVO,
+// borda superior grossa no início de cada grupo/pátio, A4 paisagem, 1 página de largura,
+// cabeçalho repetido, filtros, 1ª linha congelada, quebra de página no fim de cada pátio.
+const ORDER12 = ['patio', 'ativo', 'os', 'servico', 'desc', 'ok', 'dia', 'hIni', 'hFim', 'imediata', 'necessidade', 'colab'];
+export const ORG_ABAS = ['TODOS JUNTOS', '5° DIA ÚTIL - TODOS'];
+
+function rawRows(xml) {
+  const rows = new Map(); ROW_RE.lastIndex = 0; let m;
+  while ((m = ROW_RE.exec(xml))) {
+    const r = +attr(' ' + m[1], 'r'); const cells = {};
+    if (m[2]) { CELL_RE.lastIndex = 0; let c; while ((c = CELL_RE.exec(m[2]))) { const ref = attr(' ' + c[1], 'r'); if (ref) cells[ref.replace(/\d+/g, '')] = { a: c[1], inner: c[2] ?? null, s: attr(' ' + c[1], 's') }; } }
+    rows.set(r, { attrs: m[1], cells });
+  }
+  return rows;
+}
+function rowOpen(attrs, n) {
+  // mantém altura/formatação da linha de origem; troca o número e tira "spans"
+  const a = (' ' + attrs).replace(/\sr="\d+"/, '').replace(/\sspans="[^"]*"/, '').trim();
+  return `<row r="${n}"${a ? ' ' + a : ''}>`;
+}
+function cellOut(col, n, src, s, override) {
+  const sa = s != null ? ` s="${s}"` : '';
+  if (override) { // valor vindo do sistema (preenchimento)
+    const { v } = override;
+    if (v == null || v === '') return `<c r="${col}${n}"${sa}/>`;
+    if (typeof v === 'number') return `<c r="${col}${n}"${sa}><v>${v}</v></c>`;
+    return `<c r="${col}${n}"${sa} t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
+  }
+  if (!src) return `<c r="${col}${n}"${sa}/>`;
+  const a = (' ' + src.a).replace(/\sr="[^"]*"/, '').replace(/\ss="\d+"/, '').replace(/\scm="\d+"/, '').trim();
+  return src.inner == null ? `<c r="${col}${n}"${sa}${a ? ' ' + a : ''}/>` : `<c r="${col}${n}"${sa}${a ? ' ' + a : ''}>${src.inner}</c>`;
+}
+
+/**
+ * @param fillsByOs Map OS -> {ok, dia, hIni, hFim, imediata, necessidade, colab} (opcional: inclui os preenchimentos)
+ * @returns { bytes, relatorio }
+ */
+export async function exportOrganized(JSZip, data, organizar, fillsByOs = null) {
+  const src = await JSZip.loadAsync(data);
+  const parsed = await parseWorkbook(JSZip, data);
+  const ssFile = src.file('xl/sharedStrings.xml');
+  const ss = parseSharedStrings(ssFile ? await ssFile.async('string') : '');
+  const prim = parsed.sheets.filter((s) => s.role === 'principal');
+  const n5 = (s) => /(^|\D)5\s*DIA/.test(norm(s.name));
+  const s5 = prim.find(n5); const s1 = prim.find((s) => s !== s5) || prim[0];
+  const fontes = [s1, s5].filter(Boolean);
+  const styles = new StylePool(await src.file('xl/styles.xml').async('string')); styles.init();
+  const out = new JSZip();
+  const rel = { abas: [], fora: [] };
+  const hdr1 = rawRows(await src.file(s1.path).async('string')).get(s1.header.row);
+
+  const sheetsXml = [];
+  for (let si = 0; si < fontes.length; si++) {
+    const sh = fontes[si]; const name = ORG_ABAS[si];
+    const xml = await src.file(sh.path).async('string');
+    const raw = rawRows(xml); const map = sh.header.map;
+    const missing = ORDER12.filter((f) => !map[f]);
+    // registros
+    const recs = sh.items.map((it) => ({ ...it, src: raw.get(it.r) }));
+    const sorted = organizar(recs);
+    // larguras: segue o campo (J/K trocados no 5º dia útil)
+    const widths = {}; for (const m of xml.matchAll(/<col\b([^>]*)\/?>/g)) { const a = ' ' + m[1]; const mi = +attr(a, 'min'), ma = +attr(a, 'max'), w = attr(a, 'width'); for (let c = mi; c <= Math.min(ma, 40); c++) widths[c] = w; }
+    const cols = ORDER12.map((f, i) => { const w = map[f] ? widths[colToNum(map[f])] : null; return `<col min="${i + 1}" max="${i + 1}" width="${w || 15}" customWidth="1"/>`; }).join('');
+    // cabeçalho (J/K com o texto do 1º dia útil)
+    const hRow = raw.get(sh.header.row);
+    let rowsXml = rowOpen(hRow.attrs, 1) + ORDER12.map((f, i) => {
+      const L = numToCol(i + 1); const c = map[f] ? hRow.cells[map[f]] : null;
+      if (si > 0 && (f === 'imediata' || f === 'necessidade') && s1.header.map[f]) {
+        const c1 = hdr1.cells[s1.header.map[f]]; return cellOut(L, 1, c1, c?.s ?? c1?.s);
+      }
+      return cellOut(L, 1, c, c?.s);
+    }).join('') + '</row>';
+    // dados
+    let n = 1; let prev = null; const breaks = []; const semGrupo = new Set();
+    for (const rec of sorted) {
+      n++;
+      const novoPatio = !prev || prev.patio !== rec.patio;
+      const novoGrupo = novoPatio || prev.grupo !== rec.grupo;
+      if (novoPatio && prev) breaks.push(n - 1);
+      if (!rec.grupo) semGrupo.add(rec.patio + ' • ' + rec.ativo);
+      const cells = rec.src?.cells || {};
+      const fill = fillsByOs?.get(String(rec.os));
+      const srcStyle = ORDER12.map((f) => (map[f] && cells[map[f]] ? cells[map[f]].s : null));
+      rowsXml += rowOpen(rec.src?.attrs || '', n) + ORDER12.map((f, i) => {
+        const L = numToCol(i + 1); const c = map[f] ? cells[map[f]] : null;
+        let s = srcStyle[i];
+        // célula sem borda/formatação: usa o padrão da coluna vizinha
+        if (!styles.hasBorder(s)) {
+          for (const d of [-1, 1, -2, 2, -3, 3]) { const j = i + d; if (j >= 0 && j < 12 && styles.hasBorder(srcStyle[j])) { s = srcStyle[j]; break; } }
+        }
+        s = styles.withMods(s, { fill: i < 2 ? (rec.grupo ? GRUPO_COR_XLSX[rec.grupo] : 'none') : null, top: novoGrupo });
+        let ov = null;
+        if (fill && i >= 5) {
+          const v = { ok: fill.ok || '', dia: fill.dia ? dateSerial(fill.dia) : '', hIni: fill.hIni ? timeSerial(fill.hIni) : '', hFim: fill.hFim ? timeSerial(fill.hFim) : '', imediata: fill.imediata || '', necessidade: fill.necessidade || '', colab: fill.colab || '' }[f];
+          const fmt = f === 'dia' ? 'dd/mm/yyyy' : f === 'hIni' || f === 'hFim' ? 'hh:mm' : null;
+          if (fmt && typeof v === 'number') s = styles.withFormat(s, fmt);
+          ov = { v };
+        }
+        return cellOut(L, n, c, s, ov);
+      }).join('') + '</row>';
+      prev = rec;
+    }
+    const last = n;
+    const root = (xml.match(/<worksheet\b[^>]*>/) || ['<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'])[0];
+    const fmtPr = (xml.match(/<sheetFormatPr\b[^>]*\/>/) || ['<sheetFormatPr defaultRowHeight="15"/>'])[0];
+    const sheet = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n${root}<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:L${last}"/>` +
+      `<sheetViews><sheetView showGridLines="0"${si === 0 ? ' tabSelected="1"' : ''} zoomScale="60" zoomScaleNormal="60" workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A2" sqref="A2"/></sheetView></sheetViews>` +
+      `${fmtPr}<cols>${cols}</cols><sheetData>${rowsXml}</sheetData><autoFilter ref="A1:L${last}"/>` +
+      `<printOptions horizontalCentered="1"/><pageMargins left="0.2" right="0.2" top="0.3" bottom="0.4" header="0.15" footer="0.15"/>` +
+      `<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>` +
+      `<headerFooter><oddFooter>&amp;CPágina &amp;P de &amp;N</oddFooter></headerFooter>` +
+      (breaks.length ? `<rowBreaks count="${breaks.length}" manualBreakCount="${breaks.length}">${breaks.map((b) => `<brk id="${b}" max="16383" man="1"/>`).join('')}</rowBreaks>` : '') + `</worksheet>`;
+    sheetsXml.push({ name, xml: sheet, last });
+    const patios = [...new Set(sorted.map((r) => r.patio))];
+    rel.abas.push({ nome: name, origem: sh.name, registros: sorted.length, origemRegistros: sh.items.length, patios: patios.length, quebras: breaks.length,
+      semGrupo: [...semGrupo], colunasFaltando: missing,
+      cabecalhos: ORDER12.map((f) => (si > 0 && (f === 'imediata' || f === 'necessidade') && s1.header.map[f]) ? rawCellText(hdr1.cells[s1.header.map[f]], ss) : (map[f] ? rawCellText(hRow.cells[map[f]], ss) : '')) });
+  }
+  // situações fora do padrão
+  const todosPatios = new Set(); fontes.forEach((sh) => sh.items.forEach((i) => todosPatios.add(i.patio)));
+  rel.patiosForaPadrao = [...todosPatios].filter((p) => !/^[A-Z]{3}$/.test(norm(p)));
+  rel.outrasAbasIgnoradas = parsed.sheets.filter((s) => !fontes.includes(s)).map((s) => s.name).concat([]);
+  const mes = (t) => { const m = norm(t).match(/(JANEIRO|FEVEREIRO|MARCO|ABRIL|MAIO|JUNHO|JULHO|AGOSTO|SETEMBRO|OUTUBRO|NOVEMBRO|DEZEMBRO)\s*\/?\s*(\d{4})/); const k = norm(t).match(/(\d{1,2})\/(\d{4})/);
+    if (m) return ['JANEIRO', 'FEVEREIRO', 'MARCO', 'ABRIL', 'MAIO', 'JUNHO', 'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'].indexOf(m[1]) + 1 + '/' + m[2];
+    if (k) return +k[1] + '/' + k[2]; return null; };
+  const meses = new Set(); fontes.forEach((sh) => ['servico', 'desc'].forEach((f) => { const t = sh.header.labels[f]; const v = t && mes(t); if (v) meses.add(v); }));
+  rel.mesesCabecalho = [...meses];
+  rel.cabecalhosDiferentes = rel.abas.length > 1 ? rel.abas[1].cabecalhos.map((h, i) => (h !== rel.abas[0].cabecalhos[i] ? { coluna: numToCol(i + 1), primeiro: rel.abas[0].cabecalhos[i], quinto: h } : null)).filter(Boolean) : [];
+
+  // monta o pacote novo: só 2 abas, sem cálculos/vínculos das abas auxiliares
+  out.file('xl/styles.xml', styles.out());
+  if (ssFile) out.file('xl/sharedStrings.xml', await ssFile.async('string'));
+  const theme = src.file('xl/theme/theme1.xml'); if (theme) out.file('xl/theme/theme1.xml', await theme.async('string'));
+  sheetsXml.forEach((s, i) => out.file(`xl/worksheets/sheet${i + 1}.xml`, s.xml));
+  const q = (n) => `'${n.replace(/'/g, "''")}'`;
+  const dn = sheetsXml.map((s, i) => `<definedName name="_xlnm._FilterDatabase" localSheetId="${i}" hidden="1">${esc(q(s.name))}!$A$1:$L$${s.last}</definedName>` +
+    `<definedName name="_xlnm.Print_Area" localSheetId="${i}">${esc(q(s.name))}!$A$1:$L$${s.last}</definedName>` +
+    `<definedName name="_xlnm.Print_Titles" localSheetId="${i}">${esc(q(s.name))}!$1:$1</definedName>`).join('');
+  out.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="${NS_REL}"><workbookPr/><bookViews><workbookView activeTab="0"/></bookViews><sheets>` +
+    sheetsXml.map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + `</sheets><definedNames>${dn}</definedNames><calcPr calcId="191029"/></workbook>`);
+  const k = sheetsXml.length;
+  out.file('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+    sheetsXml.map((s, i) => `<Relationship Id="rId${i + 1}" Type="${NS_REL}/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('') +
+    `<Relationship Id="rId${k + 1}" Type="${NS_REL}/styles" Target="styles.xml"/>` +
+    (ssFile ? `<Relationship Id="rId${k + 2}" Type="${NS_REL}/sharedStrings" Target="sharedStrings.xml"/>` : '') +
+    (theme ? `<Relationship Id="rId${k + 3}" Type="${NS_REL}/theme" Target="theme/theme1.xml"/>` : '') + `</Relationships>`);
+  out.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${NS_REL}/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="${NS_REL}/extended-properties" Target="docProps/app.xml"/></Relationships>`);
+  const now = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  out.file('docProps/core.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Cíclica organizada</dc:title><dc:creator>E-Cíclica</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`);
+  out.file('docProps/app.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Microsoft Excel</Application></Properties>`);
+  out.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>` +
+    `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
+    sheetsXml.map((s, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') +
+    `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
+    (ssFile ? `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` : '') +
+    (theme ? `<Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>` : '') +
+    `<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`);
+  const bytes = await out.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 }, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  return { bytes, relatorio: rel };
+}
+function rawCellText(c, ss) { if (!c || c.inner == null) return ''; const v = cellValue(c.a, c.inner, ss); return v == null ? '' : String(v); }
+const GRUPO_COR_XLSX = { '05': 'BDD7EE', '10': 'C6EFCE', '15': 'FFF2CC', '20': 'FCE4D6', '25': 'E4DFEC', '30': 'DDEBF7', '35': 'E7E6E6', '40': 'D6DCE4', '45': 'FFE1E1' };

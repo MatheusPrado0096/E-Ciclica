@@ -1,6 +1,7 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, norm } from './xlsx.js?v=8';
-import { createLocalStore } from './store-local.js?v=8';
+import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=9';
+import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=9';
+import { createLocalStore } from './store-local.js?v=9';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -81,7 +82,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js?v=8');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=9');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {
@@ -163,7 +164,7 @@ async function loadCycle(id) {
   try {
     S.cycles = await S.store.listCycles();
     S.cycle = S.cycles.find((c) => c.id === id) || { id, titulo: 'Cíclica' };
-    S.rows = await S.store.loadRows(id);
+    S.rows = organizar(await S.store.loadRows(id)); // pátio → abrigo → ativo → OS
     S.byK = new Map(S.rows.map((r) => [r.k, r]));
   } catch (e) { toast(e.message, 5000); S.cycle = null; S.rows = []; renderAll(); return; }
   S.unsubFills = S.store.watchFills(id, (f, meta) => { S.fills = f || {}; renderAll(true); syncState(meta); }, (e) => toast(e.message, 5000));
@@ -337,31 +338,47 @@ function itemHtml(r) {
     <span class="it-main"><span class="it-sv">${hi(r.servico || r.desc)}</span><span class="it-meta">${meta}</span></span>
     <span class="it-os">${hi(r.os)}${isSeg(r) ? '<span class="segb">SEG</span>' : ''}</span></button>`;
 }
-const gk = (r) => r.patio + '|' + r.ativo;
+// cards por ABRIGO (grupo 05…45 do nome do ativo); ativos sem abrigo ficam no fim do pátio
+const gk = (r) => r.patio + '|' + (r.grupo || '—');
+const ak = (r) => r.patio + '|' + r.ativo;
+const abrigoNome = (g) => (g && g !== '—' ? 'Abrigo ' + g : 'Outros ativos');
 function renderMore(n = PAGE) {
   const list = $('#list'); const F = S.filtered;
   let stop = Math.min(F.length, S.shown + n);
   if (S.shown >= stop) return;
-  while (stop < F.length && gk(F[stop]) === gk(F[stop - 1])) stop++;
+  while (stop < F.length && gk(F[stop]) === gk(F[stop - 1])) stop++; // não corta um abrigo no meio
   let html = ''; let i = S.shown;
   while (i < stop) { const g = gk(F[i]); const items = []; while (i < stop && gk(F[i]) === g) items.push(F[i++]); html += groupHtml(items[0], g, items); }
   S.shown = stop; list.insertAdjacentHTML('beforeend', html);
 }
-function groupStats(g) {
-  const all = S.filtered.filter((r) => gk(r) === g);
+function groupStats(g, key = gk) {
+  const all = S.filtered.filter((r) => key(r) === g);
   return { n: all.length, done: all.filter((r) => statusOf(r.k) === 'ok').length, sel: all.filter((r) => S.sel.has(r.k)).length };
 }
 function groupHtml(r, g, items) {
-  const s = groupStats(g);
-  return `<div class="grp" data-g="${h(g)}"><div class="grp-h" data-gh="${h(g)}">
+  const s = groupStats(g); const gr = r.grupo || '';
+  const ativos = new Set(items.map((x) => x.ativo)).size;
+  let body = ''; let last = null;
+  for (const it of items) {
+    if (it.ativo !== last) {
+      const a = groupStats(ak(it), ak);
+      body += `<div class="ativo-h" data-ah="${h(ak(it))}"><span class="cb ${a.sel === a.n ? 'on' : a.sel ? 'part' : ''}">${ICON('check')}</span><b>${hi(it.ativo || '—')}</b><small>${a.done}/${a.n}</small></div>`;
+      last = it.ativo;
+    }
+    body += itemHtml(it);
+  }
+  const pct = s.n ? Math.round((s.done / s.n) * 100) : 0;
+  return `<div class="grp abrigo" data-g="${h(g)}" data-gr="${h(gr)}"${gr ? ` style="--gc:#${GRUPO_COR[gr]}"` : ''}><div class="grp-h" data-gh="${h(g)}">
     <span class="cb ${s.sel === s.n ? 'on' : s.sel ? 'part' : ''}">${ICON('check')}</span>
-    <span class="tag">${h(r.patio)}</span><b>${hi(r.ativo || '—')}</b>
-    <span class="gcount${s.done === s.n ? ' done' : ''}">${s.done}/${s.n}</span></div>${items.map(itemHtml).join('')}</div>`;
+    <span class="tag">${h(r.patio)}</span><span class="ab-n"><b>${abrigoNome(gr)}</b><small>${ativos} ativo${ativos > 1 ? 's' : ''} • ${s.n} OS</small></span>
+    <span class="ab-prog" title="${pct}% executado"><i style="width:${pct}%"></i></span>
+    <span class="gcount${s.done === s.n ? ' done' : ''}">${s.done}/${s.n}</span></div>${body}</div>`;
 }
 function updGroupHead(el) {
   const s = groupStats(el.dataset.g); const cb = $('.grp-h .cb', el);
   cb.className = 'cb ' + (s.sel === s.n ? 'on' : s.sel ? 'part' : '');
   const gc = $('.gcount', el); gc.textContent = `${s.done}/${s.n}`; gc.classList.toggle('done', s.done === s.n);
+  $$('.ativo-h', el).forEach((ah) => { const a = groupStats(ah.dataset.ah, ak); $('.cb', ah).className = 'cb ' + (a.sel === a.n ? 'on' : a.sel ? 'part' : ''); });
 }
 new IntersectionObserver((en) => { if (en[0].isIntersecting && S.tab === 'ciclica') renderMore(); }, { rootMargin: '600px' }).observe($('#more'));
 
@@ -375,10 +392,10 @@ $('#list').addEventListener('pointerdown', (e) => {
 addEventListener('scroll', () => clearTimeout(pressT), { passive: true });
 $('#list').addEventListener('click', (e) => {
   if (pressed) { pressed = false; return; }
-  const gh = e.target.closest('.grp-h');
-  if (gh) {
+  const gh = e.target.closest('.grp-h'); const ah = e.target.closest('.ativo-h');
+  if (gh || ah) { // abrigo inteiro ou um ativo: entra na seleção e marca/desmarca todas as OS
     if (!S.selecting) setSelecting(true);
-    const ks = S.filtered.filter((r) => gk(r) === gh.dataset.gh).map((r) => r.k);
+    const ks = S.filtered.filter((r) => (gh ? gk(r) === gh.dataset.gh : ak(r) === ah.dataset.ah)).map((r) => r.k);
     toggleSel(ks, !ks.every((k) => S.sel.has(k))); return;
   }
   const it = e.target.closest('.it'); if (!it) return;
@@ -599,7 +616,7 @@ function renderFilters() {
   $('#dClear').hidden = !(D.patio || D.eq || D.col || D.per !== 'all');
   const act = [D.per !== 'all' && $('#dPer').selectedOptions[0].text, D.patio, D.eq, D.col].filter(Boolean);
   $('#dFiltN').textContent = act.length || ''; $('#dFiltSum').textContent = act.length ? act.join(' • ') : 'Filtros: período, pátio, equipe, colaborador';
-  $$('#dFilters .sel').forEach((l) => l.classList.toggle('on', !!$('select,input', l).value && !['all', ''].includes($('select,input', l).value)));
+  $$('#dFilters .fsel').forEach((l) => l.classList.toggle('on', !!$('select,input', l).value && !['all', ''].includes($('select,input', l).value)));
 }
 $('#dFilters').addEventListener('change', (e) => {
   const D = S.d; const id = e.target.id;
@@ -816,7 +833,7 @@ $('#rXlsx').addEventListener('click', async () => {
     ['PÁTIO', 'ATIVO', 'OS', 'SERVIÇO', 'DESCRIÇÃO', 'SEGURANÇA', 'OK', 'H INÍCIO', 'H FIM', 'MANUT. IMEDIATA', 'NECESSIDADE', 'COLABORADORES', 'MATRÍCULAS', 'EQUIPE']];
   const headRow = rows.length - 1;
   for (const { r, f } of items) { const t = tokensOf(f); rows.push([r.patio, r.ativo, r.os, r.servico, r.desc, isSeg(r) ? 'SIM' : '', f.ok, f.hIni || '', f.hFim || '', f.imediata || '', f.necessidade || '', t.map((c) => c.n).join(', '), t.map((c) => c.m || '-').join(', '), f.equipe || '']); }
-  const { simpleXlsx } = await import('./xlsx.js?v=8');
+  const { simpleXlsx } = await import('./xlsx.js?v=9');
   const bytes = await simpleXlsx(JSZip, [{ name: 'Relatório ' + brDate(R.dia).replace(/\//g, '-'), rows, head: [headRow], title: [0], widths: [10, 26, 12, 50, 36, 11, 12, 9, 9, 10, 11, 30, 22, 9] }]);
   download(bytes, repFileBase() + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   toast('Relatório baixado ✔');
@@ -825,10 +842,11 @@ $('#rXlsx').addEventListener('click', async () => {
 // ---------- exportar ----------
 function exportName(c) { return (c.fileName || 'CICLICA.xlsx').replace(/\.xlsx$/i, '') + '_PREENCHIDA.xlsx'; }
 function renderExport() {
-  const has = !!S.cycle; $('#exBtn').disabled = !has;
+  const has = !!S.cycle; $('#exBtn').disabled = !has; $('#orgBtn').disabled = !has;
   if (!has) { $('#exName').textContent = 'Sem documento ativo'; $('#exInfo').textContent = ''; return; }
   const c = counts(S.rows);
   $('#exName').textContent = exportName(S.cycle);
+  $('#orgName').textContent = (S.cycle.fileName || 'CICLICA.xlsx').replace(/\.xlsx$/i, '') + '_ORGANIZADA.xlsx';
   $('#exInfo').textContent = `${S.cycle.titulo || ''} • ${c.ok} executadas e ${c.pe} pendentes, de ${c.total} OS`;
 }
 $('#exEquipe').checked = ls.get('exEquipe', true);
@@ -850,6 +868,40 @@ async function doExport(cycle, rows, fills, btn) {
   btn && (btn.disabled = false);
 }
 $('#exBtn').addEventListener('click', (e) => S.cycle && doExport(S.cycle, S.rows, S.fills, e.currentTarget));
+
+// ---------- planilha organizada (impressão) ----------
+$('#gLegend').innerHTML = GRUPOS.map((g) => `<span style="--gc:#${GRUPO_COR[g]}">${g}</span>`).join('') + '<span class="none">sem abrigo</span>';
+$('#orgFills').checked = ls.get('orgFills', false);
+$('#orgFills').addEventListener('change', (e) => ls.set('orgFills', e.target.checked));
+$('#orgBtn').addEventListener('click', async (e) => {
+  if (!S.cycle) return; const btn = e.currentTarget; btn.disabled = true; toast('Organizando a planilha…', 8000);
+  try {
+    const bytes = await S.store.getFile(S.cycle.id);
+    if (!bytes) throw new Error('Arquivo original não encontrado.');
+    let fills = null;
+    if ($('#orgFills').checked) { fills = new Map(); for (const r of S.rows) { const f = S.fills[r.k]; if (f && !fills.has(String(r.os))) fills.set(String(r.os), { ...f, colab: tokensOf(f).map((c) => c.n).join(', ') }); } }
+    const { bytes: out, relatorio } = await exportOrganized(JSZip, bytes, organizar, fills);
+    download(out, (S.cycle.fileName || 'CICLICA.xlsx').replace(/\.xlsx$/i, '') + '_ORGANIZADA.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    renderOrgRep(relatorio); toast('Planilha organizada baixada ✔');
+  } catch (err) { console.error(err); toast('Erro: ' + err.message, 6000); }
+  btn.disabled = false;
+});
+function renderOrgRep(r) {
+  const li = (t) => `<li>${t}</li>`;
+  const fora = [];
+  if (r.patiosForaPadrao.length) fora.push(li(`Pátio fora do padrão: <b>${r.patiosForaPadrao.map(h).join(', ')}</b> (ficou no lugar pela ordem alfabética, sem abrigo).`));
+  if (r.cabecalhosDiferentes?.length) r.cabecalhosDiferentes.forEach((c) => fora.push(li(`Cabeçalho da coluna ${c.coluna} diferente entre as abas: “${h(c.primeiro)}” (1º dia útil) × “${h(c.quinto)}” (5º dia útil). Mantido como no original.`)));
+  if (r.mesesCabecalho.length > 1) fora.push(li(`Mês diferente nos cabeçalhos: ${r.mesesCabecalho.map(h).join(', ')}.`));
+  r.abas.forEach((a) => { if (a.colunasFaltando.length) fora.push(li(`Na aba ${h(a.origem)} faltam as colunas: ${a.colunasFaltando.map(h).join(', ')}.`)); });
+  fora.push(li('As regras de destaque de OS repetida (formatação condicional) da aba 5° DIA UTIL não foram levadas, porque dependiam da posição das linhas e tinham referência quebrada (#REF!). As cores fixas (ex.: OS em verde) foram mantidas.'));
+  const sem = r.abas.map((a) => a.semGrupo.length ? `<details><summary>${h(a.nome)}: ${a.semGrupo.length} ativos sem abrigo (no fim de cada pátio, sem cor)</summary><p class="muted small">${a.semGrupo.map(h).join(' • ')}</p></details>` : '').join('');
+  $('#orgRep').innerHTML = `<div class="card pad org-rep"><div class="card-t"><b>${ICON('check')}Conferência</b></div>
+    <table class="rtab"><thead><tr><th>Aba</th><th>Origem</th><th>Registros</th><th>Pátios</th><th>Quebras</th></tr></thead><tbody>
+    ${r.abas.map((a) => `<tr><td><b>${h(a.nome)}</b></td><td>${h(a.origem)}</td><td>${a.registros} ${a.registros === a.origemRegistros ? '<span class="pill ok">igual ao original</span>' : `<span class="pill pe">original: ${a.origemRegistros}</span>`}</td><td>${a.patios}</td><td>${a.quebras}</td></tr>`).join('')}
+    </tbody></table>
+    <p class="muted small">Abas ignoradas: ${r.outrasAbasIgnoradas.map(h).join(', ') || '—'}</p>
+    <b class="sub">Fora do padrão (não corrigido)</b><ul class="org-list">${fora.join('')}</ul>${sem}</div>`;
+}
 
 // ---------- documento (protegido por senha) ----------
 function renderDocLock() {

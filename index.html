@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#00335e">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
 <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
-<link rel="manifest" href="manifest.webmanifest?v=8">
-<link rel="stylesheet" href="assets/css/style.css?v=8">
+<link rel="manifest" href="manifest.webmanifest?v=9">
+<link rel="stylesheet" href="assets/css/style.css?v=9">
 <script>
   try{var t=localStorage.getItem('eciclica-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t}catch(e){}
 </script>
@@ -154,13 +154,13 @@
       <div class="section-head"><div><span class="eyebrow">Monitoramento do plano</span><h2 id="pTitle">Painel</h2></div></div>
       <button class="filt-btn" id="dFiltBtn" aria-expanded="false" aria-controls="dFilters"><svg class="ic"><use href="#i-search"/></svg><span id="dFiltSum">Filtros</span><span class="n" id="dFiltN"></span><svg class="ic chev"><use href="#i-down"/></svg></button>
       <div class="filters" id="dFilters">
-        <label class="sel"><span>Período</span><select id="dPer">
+        <label class="fsel"><span>Período</span><select id="dPer">
           <option value="all">Todo o período</option><option value="today">Hoje</option><option value="7">Últimos 7 dias</option><option value="30">Últimos 30 dias</option><option value="custom">Personalizado…</option></select></label>
-        <label class="sel" id="dFromW" hidden><span>De</span><input type="date" id="dFrom"></label>
-        <label class="sel" id="dToW" hidden><span>Até</span><input type="date" id="dTo"></label>
-        <label class="sel"><span>Pátio</span><select id="dPatio"></select></label>
-        <label class="sel"><span>Equipe</span><select id="dEq"></select></label>
-        <label class="sel"><span>Colaborador</span><select id="dCol"></select></label>
+        <label class="fsel" id="dFromW" hidden><span>De</span><input type="date" id="dFrom"></label>
+        <label class="fsel" id="dToW" hidden><span>Até</span><input type="date" id="dTo"></label>
+        <label class="fsel"><span>Pátio</span><select id="dPatio"></select></label>
+        <label class="fsel"><span>Equipe</span><select id="dEq"></select></label>
+        <label class="fsel"><span>Colaborador</span><select id="dCol"></select></label>
         <button class="btn ghost small-btn" id="dClear" hidden><svg class="ic"><use href="#i-x"/></svg><span>Limpar</span></button>
       </div>
       <div class="subnav" id="dNav" role="tablist" aria-label="Visões do painel">
@@ -179,8 +179,8 @@
     <section id="relatorio" class="panel" role="tabpanel" hidden>
       <div class="section-head"><div><span class="eyebrow">Relatório diário</span><h2>O que foi feito no dia</h2></div></div>
       <div class="filters rel-f">
-        <label class="sel"><span>Dia</span><input type="date" id="rDia"></label>
-        <label class="sel"><span>De quem</span><select id="rQuem"></select></label>
+        <label class="fsel"><span>Dia</span><input type="date" id="rDia"></label>
+        <label class="fsel"><span>De quem</span><select id="rQuem"></select></label>
       </div>
       <div id="rep"></div>
       <div class="rep-actions" id="repAct">
@@ -204,6 +204,19 @@
         </div>
         <button class="btn primary big" id="exBtn"><svg class="ic"><use href="#i-download"/></svg><span>Baixar .xlsx</span></button>
       </div>
+
+      <div class="section-head org-head"><div><span class="eyebrow">Para imprimir</span><h2>Planilha organizada</h2></div></div>
+      <div class="card pad export-card">
+        <div class="xl-ic org"><svg class="ic"><use href="#i-layers"/></svg></div>
+        <div class="export-tx">
+          <b id="orgName">—</b>
+          <span class="muted">2 abas (“TODOS JUNTOS” e “5° DIA ÚTIL - TODOS”), 12 colunas, ordenada por pátio → abrigo → ativo → OS, com as cores de cada abrigo, cabeçalho repetido, A4 paisagem e cada pátio começando numa página nova.</span>
+          <div class="g-legend" id="gLegend"></div>
+          <label class="check"><input type="checkbox" id="orgFills"><span>Incluir os preenchimentos feitos no sistema</span></label>
+        </div>
+        <button class="btn primary big" id="orgBtn"><svg class="ic"><use href="#i-download"/></svg><span>Baixar organizada</span></button>
+      </div>
+      <div id="orgRep"></div>
     </section>
 
     <!-- DOCUMENTO -->
@@ -342,9 +355,9 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.js?v=8"></script>
+<script src="config.js?v=9"></script>
 <script src="assets/vendor/jszip.min.js"></script>
-<script type="module" src="assets/js/app.js?v=8"></script>
+<script type="module" src="assets/js/app.js?v=9"></script>
 <noscript><p style="padding:24px;font-family:sans-serif">Ative o JavaScript para usar o E-Cíclica.</p></noscript>
 </body>
 </html>
