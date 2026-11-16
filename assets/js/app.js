@@ -1,7 +1,7 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=13';
-import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=13';
-import { createLocalStore } from './store-local.js?v=13';
+import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=14';
+import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=14';
+import { createLocalStore } from './store-local.js?v=14';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -82,7 +82,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js?v=13');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=14');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {
@@ -511,7 +511,51 @@ function setSelecting(on) {
   if (!on) { $$('#list .it.sel').forEach((el) => { el.classList.remove('sel'); $('.cb', el).classList.remove('on'); }); $$('#list .grp').forEach(updGroupHead); $$('#list .pt').forEach((el) => updPatioHead(el.dataset.p)); }
   $('#selbar').hidden = !(on && S.tab === 'ciclica'); updSelbar();
 }
-function updSelbar() { $('#selN').textContent = S.sel.size; $('#selFill').disabled = !S.sel.size; }
+function updSelbar() {
+  $('#selN').textContent = S.sel.size; $('#selFill').disabled = !S.sel.size;
+  const clip = getClip();
+  $('#selCopy').disabled = !(S.sel.size === 1 && S.fills[[...S.sel][0]]);
+  $('#selPaste').disabled = !(clip && S.sel.size);
+  $('#selPaste').classList.toggle('has', !!clip);
+}
+
+// ---------- copiar / colar preenchimento ----------
+const CLIP_FIELDS = ['ok', 'dia', 'hIni', 'hFim', 'imediata', 'necessidade', 'colab', 'mats', 'colabs', 'equipe'];
+function getClip() { return ls.get('clip', null); }
+function clipResumo(c) {
+  const t = tokensOf(c).map((x) => x.n + (x.m ? ' (' + x.m + ')' : '')).join(', ');
+  return `<dl class="info"><dt>De</dt><dd>OS <b>${h(c._os || '')}</b> ${h(c._ativo || '')}</dd>
+    <dt>OK</dt><dd><span class="pill ${c.ok === 'EXECUTADO' ? 'ok' : 'pe'}">${h(c.ok)}</span></dd>
+    ${c.dia ? `<dt>Dia</dt><dd>${brDate(c.dia)}${c.hIni ? ' • ' + h(c.hIni) + (c.hFim ? '–' + h(c.hFim) : '') : ''}</dd>` : ''}
+    <dt>S/N</dt><dd>Imediata: <b>${h(c.imediata || '—')}</b> • Necessidade: <b>${h(c.necessidade || '—')}</b></dd>
+    <dt>Colab.</dt><dd>${h(t || '—')}</dd>${c.equipe ? `<dt>Equipe</dt><dd>${h(c.equipe)}</dd>` : ''}</dl>`;
+}
+$('#selCopy').addEventListener('click', () => {
+  if (S.sel.size !== 1) return toast('Selecione só 1 OS preenchida para copiar.');
+  const k = [...S.sel][0]; const f = S.fills[k]; if (!f) return toast('Essa OS ainda não tem preenchimento.');
+  const r = S.byK.get(k); const c = { _os: r.os, _ativo: r.ativo, _at: Date.now() };
+  CLIP_FIELDS.forEach((x) => { if (f[x] !== undefined) c[x] = f[x]; });
+  ls.set('clip', c); toast(`Preenchimento da OS ${r.os} copiado. Agora selecione as OS e toque em Colar.`, 3500);
+  S.sel.clear(); renderList(); updSelbar();
+});
+$('#selPaste').addEventListener('click', async () => {
+  const c = getClip(); if (!c || !S.sel.size) return;
+  let keys = [...S.sel].filter((k) => S.byK.has(k)); const filled = keys.filter((k) => S.fills[k]);
+  const r = await dialog({
+    title: `Colar em ${keys.length} OS`, yes: 'Colar', no: 'Cancelar',
+    html: `<p>O preenchimento abaixo será colado nas <b>${keys.length}</b> OS selecionadas.</p>${clipResumo(c)}` +
+      (filled.length ? `<label class="check"><input type="checkbox" id="pvAll"><span>Substituir também as <b>${filled.length}</b> que já estão preenchidas</span></label>` : ''),
+    validate: (bd) => ({ all: !!$('#pvAll', bd)?.checked }),
+  });
+  if (!r) return;
+  if (!r.all) keys = keys.filter((k) => !S.fills[k]);
+  if (!keys.length) return toast('Nada para colar: as OS selecionadas já estavam preenchidas.');
+  const fill = { by: S.me.nome, mat: S.me.matricula, at: Date.now() }; CLIP_FIELDS.forEach((x) => { if (c[x] !== undefined) fill[x] = c[x]; });
+  try {
+    await S.store.saveFills(S.cycle.id, keys.map((k) => ({ k, g: S.byK.get(k).g, fill })));
+    toast(`Preenchimento colado em ${keys.length} OS ✔`); setSelecting(false);
+  } catch (err) { toast(err.message, 5000); }
+});
 $('#selToggle').addEventListener('click', () => setSelecting(!S.selecting));
 $('#selClose').addEventListener('click', () => setSelecting(false));
 $('#selAll').addEventListener('click', () => { const ks = S.filtered.map((r) => r.k); if (ks.length && ks.every((k) => S.sel.has(k))) S.sel.clear(); else ks.forEach((k) => S.sel.add(k)); renderList(true); updSelbar(); });
@@ -927,7 +971,7 @@ $('#rXlsx').addEventListener('click', async () => {
     ['PÁTIO', 'ATIVO', 'OS', 'SERVIÇO', 'DESCRIÇÃO', 'SEGURANÇA', 'OK', 'H INÍCIO', 'H FIM', 'MANUT. IMEDIATA', 'NECESSIDADE', 'COLABORADORES', 'MATRÍCULAS', 'EQUIPE']];
   const headRow = rows.length - 1;
   for (const { r, f } of items) { const t = tokensOf(f); rows.push([r.patio, r.ativo, r.os, r.servico, r.desc, isSeg(r) ? 'SIM' : '', f.ok, f.hIni || '', f.hFim || '', f.imediata || '', f.necessidade || '', t.map((c) => c.n).join(', '), t.map((c) => c.m || '-').join(', '), f.equipe || '']); }
-  const { simpleXlsx } = await import('./xlsx.js?v=13');
+  const { simpleXlsx } = await import('./xlsx.js?v=14');
   const bytes = await simpleXlsx(JSZip, [{ name: 'Relatório ' + brDate(R.dia).replace(/\//g, '-'), rows, head: [headRow], title: [0], widths: [10, 26, 12, 50, 36, 11, 12, 9, 9, 10, 11, 30, 22, 9] }]);
   download(bytes, repFileBase() + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   toast('Relatório baixado ✔');

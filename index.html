@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#00335e">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
 <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
-<link rel="manifest" href="manifest.webmanifest?v=13">
-<link rel="stylesheet" href="assets/css/style.css?v=13">
+<link rel="manifest" href="manifest.webmanifest?v=14">
+<link rel="stylesheet" href="assets/css/style.css?v=14">
 <script>
   try{var t=localStorage.getItem('eciclica-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.dataset.theme=t}catch(e){}
 </script>
@@ -56,6 +56,8 @@
     <symbol id="i-switch" viewBox="0 0 24 24"><path d="M6 2v20M18 2v20M6 6h12M6 12h12M6 18h12"/><path d="M6 22 18 9"/></symbol>
     <symbol id="i-track" viewBox="0 0 24 24"><path d="M7 2 5 22M17 2l2 20M6.5 6h11M6 11h12M5.5 16h13"/></symbol>
     <symbol id="i-radar" viewBox="0 0 24 24"><path d="M3 18h18M5 18V9M19 18V9M5 13h14"/><path d="M9 6a4 4 0 0 1 6 0M7 3.5a7 7 0 0 1 10 0"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 4V2h6v2M9 12h6M9 16h4"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
   </defs>
 </svg>
@@ -267,7 +269,9 @@
   <div class="selbar" id="selbar" hidden>
     <button class="icon-btn" id="selClose" aria-label="Sair da seleção"><svg class="ic"><use href="#i-x"/></svg></button>
     <div class="sel-info"><b id="selN">0</b><small>selecionadas</small></div>
-    <button class="btn ghost" id="selAll">Todas da lista</button>
+    <button class="btn ghost" id="selAll"><svg class="ic"><use href="#i-checks"/></svg><span>Todas</span></button>
+    <button class="btn ghost sb-ic" id="selCopy" disabled title="Copiar o preenchimento da OS selecionada"><svg class="ic"><use href="#i-copy"/></svg><span>Copiar</span></button>
+    <button class="btn ghost sb-ic" id="selPaste" disabled title="Colar o preenchimento copiado nas OS selecionadas"><svg class="ic"><use href="#i-paste"/></svg><span>Colar</span></button>
     <button class="btn primary" id="selFill" disabled><svg class="ic"><use href="#i-edit"/></svg><span>Preencher</span></button>
   </div>
 </div>
@@ -359,9 +363,9 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<script src="config.js?v=13"></script>
+<script src="config.js?v=14"></script>
 <script src="assets/vendor/jszip.min.js"></script>
-<script type="module" src="assets/js/app.js?v=13"></script>
+<script type="module" src="assets/js/app.js?v=14"></script>
 <noscript><p style="padding:24px;font-family:sans-serif">Ative o JavaScript para usar o E-Cíclica.</p></noscript>
 </body>
 </html>
