@@ -1,7 +1,7 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=9';
-import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=9';
-import { createLocalStore } from './store-local.js?v=9';
+import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=10';
+import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=10';
+import { createLocalStore } from './store-local.js?v=10';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -82,7 +82,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js?v=9');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=10');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {
@@ -316,13 +316,14 @@ function hi(text) {
   return h(t).replace(new RegExp('(' + terms.join('|') + ')', 'gi'), '<mark>$1</mark>');
 }
 
-const PAGE = 80;
+const PAGE = 30; // abrigos por vez (os cards começam recolhidos)
 function renderList(keepScroll) {
   S.filtered = applyFilters();
   const c = counts(S.filtered);
-  $('#count').textContent = `${S.filtered.length === S.rows.length ? S.rows.length + ' OS' : S.filtered.length + ' de ' + S.rows.length + ' OS'} • ${c.ok} executadas • ${c.pe} pendentes`;
-  const want = keepScroll ? Math.max(S.shown, PAGE) : PAGE;
-  S.shown = 0; $('#list').innerHTML = '';
+  $('#count').innerHTML = `<span>${S.filtered.length === S.rows.length ? S.rows.length + ' OS' : S.filtered.length + ' de ' + S.rows.length + ' OS'} • ${c.ok} executadas • ${c.pe} pendentes</span>` +
+    (S.filtered.length ? `<span class="xp"><button type="button" data-xp="1">Expandir todos</button><button type="button" data-xp="0">Recolher todos</button></span>` : '');
+  const want = keepScroll ? Math.max(S.shownG || 0, PAGE) : PAGE;
+  S.shown = 0; S.shownG = 0; $('#list').innerHTML = '';
   if (!S.filtered.length && S.rows.length) $('#list').innerHTML = '<div class="empty"><b>Nada encontrado</b><span>Ajuste a pesquisa ou os filtros.</span></div>';
   renderMore(want);
   $('#list').classList.toggle('selecting', S.selecting);
@@ -338,47 +339,96 @@ function itemHtml(r) {
     <span class="it-main"><span class="it-sv">${hi(r.servico || r.desc)}</span><span class="it-meta">${meta}</span></span>
     <span class="it-os">${hi(r.os)}${isSeg(r) ? '<span class="segb">SEG</span>' : ''}</span></button>`;
 }
-// cards por ABRIGO (grupo 05…45 do nome do ativo); ativos sem abrigo ficam no fim do pátio
+// cards por ABRIGO (grupo 05…45 do nome do ativo); ativos sem abrigo ficam no fim do pátio.
+// Dentro do abrigo: card de SINALEIROS, card de MCH e "Demais ativos". Todos recolhem/expandem.
 const gk = (r) => r.patio + '|' + (r.grupo || '—');
 const ak = (r) => r.patio + '|' + r.ativo;
+const tipoOf = (r) => r.tipo || (r.tipo = /SINALEIRO/i.test(r.ativo || '') ? 'sin' : /\bMCH\b/i.test(r.ativo || '') ? 'mch' : 'out');
+const sk = (r) => gk(r) + '|' + tipoOf(r);
+const TIPOS = [['sin', 'Sinaleiros', 'signal'], ['mch', 'MCH — máquinas de chave', 'switch'], ['out', 'Demais ativos', 'list']];
 const abrigoNome = (g) => (g && g !== '—' ? 'Abrigo ' + g : 'Outros ativos');
+S.open = new Set(ls.get('abOpen', [])); S.subClosed = new Set();
+const autoOpen = () => !!S.f.q.trim() || S.filtered.length <= 40; // pesquisando ou poucas OS: tudo aberto
+const isOpen = (g) => S.open.has(g) || autoOpen();
+function saveOpen() { ls.set('abOpen', [...S.open].slice(-200)); }
 function renderMore(n = PAGE) {
   const list = $('#list'); const F = S.filtered;
-  let stop = Math.min(F.length, S.shown + n);
-  if (S.shown >= stop) return;
-  while (stop < F.length && gk(F[stop]) === gk(F[stop - 1])) stop++; // não corta um abrigo no meio
-  let html = ''; let i = S.shown;
-  while (i < stop) { const g = gk(F[i]); const items = []; while (i < stop && gk(F[i]) === g) items.push(F[i++]); html += groupHtml(items[0], g, items); }
-  S.shown = stop; list.insertAdjacentHTML('beforeend', html);
+  if (S.shown >= F.length) return;
+  let html = ''; let i = S.shown; let groups = 0;
+  while (i < F.length && groups < n) { const g = gk(F[i]); const items = []; while (i < F.length && gk(F[i]) === g) items.push(F[i++]); html += groupHtml(items[0], g, items); groups++; }
+  S.shown = i; S.shownG = (S.shownG || 0) + groups; list.insertAdjacentHTML('beforeend', html);
+  // se ainda sobra espaço na tela (cards recolhidos são baixos), carrega mais
+  requestAnimationFrame(() => { const m = $('#more').getBoundingClientRect(); if (S.tab === 'ciclica' && m.top < innerHeight + 600 && S.shown < S.filtered.length) renderMore(); });
 }
 function groupStats(g, key = gk) {
   const all = S.filtered.filter((r) => key(r) === g);
   return { n: all.length, done: all.filter((r) => statusOf(r.k) === 'ok').length, sel: all.filter((r) => S.sel.has(r.k)).length };
 }
-function groupHtml(r, g, items) {
-  const s = groupStats(g); const gr = r.grupo || '';
-  const ativos = new Set(items.map((x) => x.ativo)).size;
+const cbCls = (s) => 'cb ' + (s.n && s.sel === s.n ? 'on' : s.sel ? 'part' : '');
+function ativosHtml(items) {
   let body = ''; let last = null;
   for (const it of items) {
     if (it.ativo !== last) {
       const a = groupStats(ak(it), ak);
-      body += `<div class="ativo-h" data-ah="${h(ak(it))}"><span class="cb ${a.sel === a.n ? 'on' : a.sel ? 'part' : ''}">${ICON('check')}</span><b>${hi(it.ativo || '—')}</b><small>${a.done}/${a.n}</small></div>`;
+      body += `<div class="ativo-h" data-ah="${h(ak(it))}"><span class="${cbCls(a)}">${ICON('check')}</span><b>${hi(it.ativo || '—')}</b><small>${a.done}/${a.n}</small></div>`;
       last = it.ativo;
     }
     body += itemHtml(it);
   }
+  return body;
+}
+function groupHtml(r, g, items) {
+  const s = groupStats(g); const gr = r.grupo || ''; const open = isOpen(g);
+  const ativos = new Set(items.map((x) => x.ativo)).size;
+  const byT = { sin: [], mch: [], out: [] }; items.forEach((it) => byT[tipoOf(it)].push(it));
+  const temSub = byT.sin.length || byT.mch.length;
+  const resumo = TIPOS.filter(([t]) => byT[t].length).map(([t, l, ic]) => { const d = byT[t].filter((x) => statusOf(x.k) === 'ok').length;
+    return `<span class="tchip t-${t}">${ICON(ic)}${t === 'out' ? 'Demais' : t === 'sin' ? 'Sinaleiros' : 'MCH'} <b>${d}/${byT[t].length}</b></span>`; }).join('');
+  let body = '';
+  if (open) {
+    if (!temSub) body = ativosHtml(items);
+    else for (const [t, label, ic] of TIPOS) {
+      if (!byT[t].length) continue;
+      const key = g + '|' + t; const st = groupStats(key, sk); const sOpen = !S.subClosed.has(key);
+      const nat = new Set(byT[t].map((x) => x.ativo)).size;
+      body += `<div class="sub t-${t}${sOpen ? '' : ' closed'}" data-s="${h(key)}"><div class="sub-h" data-sh="${h(key)}">
+        <span class="${cbCls(st)}">${ICON('check')}</span><span class="sub-ic">${ICON(ic)}</span>
+        <span class="sub-n"><b>${label}</b><small>${nat} ativo${nat > 1 ? 's' : ''} • ${st.n} OS</small></span>
+        <span class="gcount${st.done === st.n ? ' done' : ''}">${st.done}/${st.n}</span><button type="button" class="tg" aria-label="${sOpen ? 'Recolher' : 'Expandir'}" aria-expanded="${sOpen}">${ICON('down')}</button></div>
+        ${sOpen ? `<div class="sub-b">${ativosHtml(byT[t])}</div>` : ''}</div>`;
+    }
+  }
   const pct = s.n ? Math.round((s.done / s.n) * 100) : 0;
-  return `<div class="grp abrigo" data-g="${h(g)}" data-gr="${h(gr)}"${gr ? ` style="--gc:#${GRUPO_COR[gr]}"` : ''}><div class="grp-h" data-gh="${h(g)}">
-    <span class="cb ${s.sel === s.n ? 'on' : s.sel ? 'part' : ''}">${ICON('check')}</span>
+  return `<div class="grp abrigo${open ? '' : ' closed'}" data-g="${h(g)}" data-gr="${h(gr)}"${gr ? ` style="--gc:#${GRUPO_COR[gr]}"` : ''}><div class="grp-h" data-gh="${h(g)}">
+    <span class="${cbCls(s)}">${ICON('check')}</span>
     <span class="tag">${h(r.patio)}</span><span class="ab-n"><b>${abrigoNome(gr)}</b><small>${ativos} ativo${ativos > 1 ? 's' : ''} • ${s.n} OS</small></span>
     <span class="ab-prog" title="${pct}% executado"><i style="width:${pct}%"></i></span>
-    <span class="gcount${s.done === s.n ? ' done' : ''}">${s.done}/${s.n}</span></div>${body}</div>`;
+    <span class="gcount${s.done === s.n ? ' done' : ''}">${s.done}/${s.n}</span><button type="button" class="tg" aria-label="${open ? 'Recolher' : 'Expandir'}" aria-expanded="${open}">${ICON('down')}</button></div>
+    ${open ? `<div class="grp-b${temSub ? ' has-sub' : ''}">${body}</div>` : `<div class="tsum">${resumo}</div>`}</div>`;
 }
+// redesenha só um card (recolher/expandir)
+function rerenderGroup(g) {
+  const el = $(`.grp[data-g="${CSS.escape(g)}"]`); if (!el) return;
+  const items = S.filtered.filter((r) => gk(r) === g); if (!items.length) return;
+  el.outerHTML = groupHtml(items[0], g, items);
+}
+function toggleGroup(g) {
+  if (isOpen(g) && autoOpen()) return toast('Com pesquisa ativa os cards ficam abertos.');
+  if (S.open.has(g)) S.open.delete(g); else S.open.add(g); saveOpen(); rerenderGroup(g);
+}
+function toggleSub(key) { if (S.subClosed.has(key)) S.subClosed.delete(key); else S.subClosed.add(key); rerenderGroup(key.split('|').slice(0, 2).join('|')); }
+$('#count').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-xp]'); if (!b) return;
+  const gs = new Set(S.filtered.map(gk));
+  if (b.dataset.xp === '1') gs.forEach((g) => S.open.add(g)); else gs.forEach((g) => S.open.delete(g));
+  S.subClosed.clear(); saveOpen(); renderList(true);
+});
 function updGroupHead(el) {
   const s = groupStats(el.dataset.g); const cb = $('.grp-h .cb', el);
-  cb.className = 'cb ' + (s.sel === s.n ? 'on' : s.sel ? 'part' : '');
-  const gc = $('.gcount', el); gc.textContent = `${s.done}/${s.n}`; gc.classList.toggle('done', s.done === s.n);
-  $$('.ativo-h', el).forEach((ah) => { const a = groupStats(ah.dataset.ah, ak); $('.cb', ah).className = 'cb ' + (a.sel === a.n ? 'on' : a.sel ? 'part' : ''); });
+  cb.className = cbCls(s);
+  const gc = $('.grp-h .gcount', el); gc.textContent = `${s.done}/${s.n}`; gc.classList.toggle('done', s.done === s.n);
+  $$('.sub-h', el).forEach((sh) => { const a = groupStats(sh.dataset.sh, sk); $('.cb', sh).className = cbCls(a); });
+  $$('.ativo-h', el).forEach((ah) => { const a = groupStats(ah.dataset.ah, ak); $('.cb', ah).className = cbCls(a); });
 }
 new IntersectionObserver((en) => { if (en[0].isIntersecting && S.tab === 'ciclica') renderMore(); }, { rootMargin: '600px' }).observe($('#more'));
 
@@ -392,10 +442,17 @@ $('#list').addEventListener('pointerdown', (e) => {
 addEventListener('scroll', () => clearTimeout(pressT), { passive: true });
 $('#list').addEventListener('click', (e) => {
   if (pressed) { pressed = false; return; }
-  const gh = e.target.closest('.grp-h'); const ah = e.target.closest('.ativo-h');
-  if (gh || ah) { // abrigo inteiro ou um ativo: entra na seleção e marca/desmarca todas as OS
+  const gh = e.target.closest('.grp-h'); const sh = e.target.closest('.sub-h'); const ah = e.target.closest('.ativo-h');
+  const tg = e.target.closest('.tg');
+  // cabeçalho do abrigo / do card (sinaleiros, MCH…): recolhe/expande; no modo seleção, marca todas as OS
+  if (gh || sh) {
+    if (tg || !S.selecting) return gh ? toggleGroup(gh.dataset.gh) : toggleSub(sh.dataset.sh);
+    const ks = S.filtered.filter((r) => (gh ? gk(r) === gh.dataset.gh : sk(r) === sh.dataset.sh)).map((r) => r.k);
+    toggleSel(ks, !ks.every((k) => S.sel.has(k))); return;
+  }
+  if (ah) { // nome do ativo: entra na seleção e marca/desmarca as OS dele
     if (!S.selecting) setSelecting(true);
-    const ks = S.filtered.filter((r) => (gh ? gk(r) === gh.dataset.gh : ak(r) === ah.dataset.ah)).map((r) => r.k);
+    const ks = S.filtered.filter((r) => ak(r) === ah.dataset.ah).map((r) => r.k);
     toggleSel(ks, !ks.every((k) => S.sel.has(k))); return;
   }
   const it = e.target.closest('.it'); if (!it) return;
@@ -833,7 +890,7 @@ $('#rXlsx').addEventListener('click', async () => {
     ['PÁTIO', 'ATIVO', 'OS', 'SERVIÇO', 'DESCRIÇÃO', 'SEGURANÇA', 'OK', 'H INÍCIO', 'H FIM', 'MANUT. IMEDIATA', 'NECESSIDADE', 'COLABORADORES', 'MATRÍCULAS', 'EQUIPE']];
   const headRow = rows.length - 1;
   for (const { r, f } of items) { const t = tokensOf(f); rows.push([r.patio, r.ativo, r.os, r.servico, r.desc, isSeg(r) ? 'SIM' : '', f.ok, f.hIni || '', f.hFim || '', f.imediata || '', f.necessidade || '', t.map((c) => c.n).join(', '), t.map((c) => c.m || '-').join(', '), f.equipe || '']); }
-  const { simpleXlsx } = await import('./xlsx.js?v=9');
+  const { simpleXlsx } = await import('./xlsx.js?v=10');
   const bytes = await simpleXlsx(JSZip, [{ name: 'Relatório ' + brDate(R.dia).replace(/\//g, '-'), rows, head: [headRow], title: [0], widths: [10, 26, 12, 50, 36, 11, 12, 9, 9, 10, 11, 30, 22, 9] }]);
   download(bytes, repFileBase() + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   toast('Relatório baixado ✔');

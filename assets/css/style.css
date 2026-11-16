@@ -798,3 +798,41 @@ button.kpi:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
 .org-rep summary{cursor:pointer;font-weight:700}
 @media(max-width:720px){.ab-prog{display:none}.grp.abrigo .it{padding-left:16px}}
 @media(max-width:720px){.grp.abrigo .grp-h .gcount{margin-left:auto}}
+
+/* v5 — recolher/expandir + cards de Sinaleiros e MCH dentro do abrigo */
+#count{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px}
+#count .xp{display:flex;gap:6px}
+#count .xp button{padding:5px 11px;border-radius:999px;font-size:.78rem;font-weight:700;color:var(--primary);background:color-mix(in srgb,var(--primary) 9%,transparent)}
+#count .xp button:hover{background:color-mix(in srgb,var(--primary) 16%,transparent)}
+.grp-h,.sub-h{cursor:pointer;user-select:none}
+.tg{flex:none;width:34px;height:34px;border-radius:10px;display:grid;place-items:center;color:var(--muted);transition:background .2s,transform .25s var(--ease)}
+.tg:hover{background:color-mix(in srgb,var(--text) 8%,transparent)}
+.tg .ic{width:18px;height:18px;stroke-width:2.6;transition:transform .25s var(--ease)}
+.grp.closed > .grp-h .tg .ic,.sub.closed > .sub-h .tg .ic{transform:rotate(-90deg)}
+.grp.abrigo.closed .grp-h{border-bottom:0}
+.tsum{display:flex;flex-wrap:wrap;gap:6px;padding:8px 14px 12px;background:color-mix(in srgb,var(--gc) 22%,var(--surface))}
+:root[data-theme=dark] .tsum{background:color-mix(in srgb,var(--gc) 8%,var(--surface))}
+.grp.abrigo[data-gr=""] .tsum{background:var(--surface)}
+.tchip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:.76rem;font-weight:700;background:var(--surface);border:1px solid var(--line);color:var(--muted)}
+.tchip b{color:var(--text);font-variant-numeric:tabular-nums}
+.tchip .ic{width:14px;height:14px}
+.t-sin .ic,.sub.t-sin .sub-ic{color:#c0392b}
+.t-mch .ic,.sub.t-mch .sub-ic{color:#1d5fa8}
+:root[data-theme=dark] .t-sin .ic,:root[data-theme=dark] .sub.t-sin .sub-ic{color:#ff7b6b}
+:root[data-theme=dark] .t-mch .ic,:root[data-theme=dark] .sub.t-mch .sub-ic{color:#6aa8ff}
+.grp-b.has-sub{display:flex;flex-direction:column;gap:10px;padding:10px;background:color-mix(in srgb,var(--gc) 14%,var(--surface))}
+:root[data-theme=dark] .grp-b.has-sub{background:color-mix(in srgb,var(--gc) 5%,var(--surface))}
+.sub{border-radius:16px;background:var(--surface);border:1px solid var(--line);overflow:hidden;box-shadow:var(--shadow-sm)}
+.sub-h{display:flex;align-items:center;gap:10px;padding:10px 10px 10px 12px;border-bottom:1px solid var(--line)}
+.sub.closed .sub-h{border-bottom:0}
+.sub-ic{flex:none;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,currentColor 12%,transparent)}
+.sub-ic .ic{width:18px;height:18px}
+.sub.t-out .sub-ic{color:var(--muted)}
+.sub-n{display:flex;flex-direction:column;min-width:0;line-height:1.15;margin-right:auto}
+.sub-n b{font-size:.92rem;font-weight:800}
+.sub-n small{font-size:.72rem;color:var(--muted);font-weight:600}
+.sub .gcount{font-size:.78rem;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums}
+.sub .gcount.done{color:var(--ok)}
+.list:not(.selecting) .sub-h .cb{display:none}
+.grp.abrigo .sub .it{padding-left:20px}
+.list.selecting .grp.abrigo .sub .it{padding-left:14px}
