@@ -1,7 +1,7 @@
 // ===== E-Cíclica • aplicativo =====
-import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=10';
-import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=10';
-import { createLocalStore } from './store-local.js?v=10';
+import { parseWorkbook, buildRows, exportWorkbook, exportOrganized, norm } from './xlsx.js?v=11';
+import { organizar, GRUPO_COR, GRUPOS } from './organizar.js?v=11';
+import { createLocalStore } from './store-local.js?v=11';
 
 const cfg = window.ECICLICA_CONFIG || { firebase: {}, equipes: [] };
 const JSZip = window.JSZip;
@@ -82,7 +82,7 @@ async function boot() {
   try {
     if (cfg.firebase?.apiKey) {
       $('#bootMsg').textContent = 'Conectando…';
-      const { createFirebaseStore } = await import('./store-firebase.js?v=10');
+      const { createFirebaseStore } = await import('./store-firebase.js?v=11');
       S.store = await createFirebaseStore(cfg);
     } else S.store = createLocalStore(cfg);
   } catch (e) {
@@ -316,16 +316,15 @@ function hi(text) {
   return h(t).replace(new RegExp('(' + terms.join('|') + ')', 'gi'), '<mark>$1</mark>');
 }
 
-const PAGE = 30; // abrigos por vez (os cards começam recolhidos)
-function renderList(keepScroll) {
+function renderList() {
   S.filtered = applyFilters();
   const c = counts(S.filtered);
   $('#count').innerHTML = `<span>${S.filtered.length === S.rows.length ? S.rows.length + ' OS' : S.filtered.length + ' de ' + S.rows.length + ' OS'} • ${c.ok} executadas • ${c.pe} pendentes</span>` +
     (S.filtered.length ? `<span class="xp"><button type="button" data-xp="1">Expandir todos</button><button type="button" data-xp="0">Recolher todos</button></span>` : '');
-  const want = keepScroll ? Math.max(S.shownG || 0, PAGE) : PAGE;
-  S.shown = 0; S.shownG = 0; $('#list').innerHTML = '';
-  if (!S.filtered.length && S.rows.length) $('#list').innerHTML = '<div class="empty"><b>Nada encontrado</b><span>Ajuste a pesquisa ou os filtros.</span></div>';
-  renderMore(want);
+  if (!S.filtered.length) { $('#list').innerHTML = S.rows.length ? '<div class="empty"><b>Nada encontrado</b><span>Ajuste a pesquisa ou os filtros.</span></div>' : ''; return; }
+  let html = ''; const F = S.filtered; let i = 0;
+  while (i < F.length) { const p = F[i].patio; const items = []; while (i < F.length && F[i].patio === p) items.push(F[i++]); html += patioHtml(p, items); }
+  $('#list').innerHTML = html;
   $('#list').classList.toggle('selecting', S.selecting);
 }
 function itemHtml(r) {
@@ -351,14 +350,37 @@ S.open = new Set(ls.get('abOpen', [])); S.subClosed = new Set();
 const autoOpen = () => !!S.f.q.trim() || S.filtered.length <= 40; // pesquisando ou poucas OS: tudo aberto
 const isOpen = (g) => S.open.has(g) || autoOpen();
 function saveOpen() { ls.set('abOpen', [...S.open].slice(-200)); }
-function renderMore(n = PAGE) {
-  const list = $('#list'); const F = S.filtered;
-  if (S.shown >= F.length) return;
-  let html = ''; let i = S.shown; let groups = 0;
-  while (i < F.length && groups < n) { const g = gk(F[i]); const items = []; while (i < F.length && gk(F[i]) === g) items.push(F[i++]); html += groupHtml(items[0], g, items); groups++; }
-  S.shown = i; S.shownG = (S.shownG || 0) + groups; list.insertAdjacentHTML('beforeend', html);
-  // se ainda sobra espaço na tela (cards recolhidos são baixos), carrega mais
-  requestAnimationFrame(() => { const m = $('#more').getBoundingClientRect(); if (S.tab === 'ciclica' && m.top < innerHeight + 600 && S.shown < S.filtered.length) renderMore(); });
+function renderMore() {} // lista agora é desenhada inteira (pátios e abrigos começam recolhidos)
+// ---- card do PÁTIO (por fora de tudo) ----
+const pk = (r) => r.patio;
+S.openP = new Set(ls.get('ptOpen', []));
+const isOpenP = (p) => S.openP.has(p) || autoOpen() || S.f.patio === p;
+function patioHtml(p, items) {
+  const s = groupStats(p, pk); const open = isOpenP(p);
+  const abrigos = []; let i = 0;
+  while (i < items.length) { const g = gk(items[i]); const its = []; while (i < items.length && gk(items[i]) === g) its.push(items[i++]); abrigos.push([g, its]); }
+  const pct = s.n ? Math.round((s.done / s.n) * 100) : 0;
+  const resumo = abrigos.map(([g, its]) => { const gr = its[0].grupo || ''; const d = its.filter((x) => statusOf(x.k) === 'ok').length;
+    return `<span class="achip${gr ? '' : ' none'}"${gr ? ` style="--gc:#${GRUPO_COR[gr]}"` : ''}>${gr || 'Outros'} <b>${d}/${its.length}</b></span>`; }).join('');
+  return `<section class="pt${open ? '' : ' closed'}" data-p="${h(p)}"><div class="pt-h" data-ph="${h(p)}">
+    <span class="${cbCls(s)}">${ICON('check')}</span><span class="pt-ic">${ICON('pin')}</span>
+    <span class="pt-n"><b>${h(p)}</b><small>${(() => { const n = abrigos.filter(([, its]) => its[0].grupo).length; return n ? n + (n > 1 ? ' abrigos' : ' abrigo') : 'sem abrigo'; })()} • ${s.n} OS</small></span>
+    <span class="pt-prog"><i style="width:${pct}%"></i></span><span class="gcount${s.done === s.n ? ' done' : ''}">${s.done}/${s.n}</span>
+    <button type="button" class="tg" aria-label="${open ? 'Recolher' : 'Expandir'}" aria-expanded="${open}">${ICON('down')}</button></div>
+    ${open ? `<div class="pt-b">${abrigos.map(([g, its]) => groupHtml(its[0], g, its)).join('')}</div>` : `<div class="asum">${resumo}</div>`}</section>`;
+}
+function rerenderPatio(p) {
+  const el = $(`.pt[data-p="${CSS.escape(p)}"]`); if (!el) return;
+  const items = S.filtered.filter((r) => r.patio === p); if (items.length) el.outerHTML = patioHtml(p, items);
+}
+function togglePatio(p) {
+  if (autoOpen() || S.f.patio === p) return toast(S.f.patio === p ? 'Pátio escolhido no filtro fica aberto.' : 'Com pesquisa ativa os cards ficam abertos.');
+  if (S.openP.has(p)) S.openP.delete(p); else S.openP.add(p); ls.set('ptOpen', [...S.openP]); rerenderPatio(p);
+}
+function updPatioHead(p) {
+  const el = $(`.pt[data-p="${CSS.escape(p)}"]`); if (!el) return;
+  const s = groupStats(p, pk); $('.pt-h .cb', el).className = cbCls(s);
+  const gc = $('.pt-h .gcount', el); gc.textContent = `${s.done}/${s.n}`; gc.classList.toggle('done', s.done === s.n);
 }
 function groupStats(g, key = gk) {
   const all = S.filtered.filter((r) => key(r) === g);
@@ -401,7 +423,7 @@ function groupHtml(r, g, items) {
   const pct = s.n ? Math.round((s.done / s.n) * 100) : 0;
   return `<div class="grp abrigo${open ? '' : ' closed'}" data-g="${h(g)}" data-gr="${h(gr)}"${gr ? ` style="--gc:#${GRUPO_COR[gr]}"` : ''}><div class="grp-h" data-gh="${h(g)}">
     <span class="${cbCls(s)}">${ICON('check')}</span>
-    <span class="tag">${h(r.patio)}</span><span class="ab-n"><b>${abrigoNome(gr)}</b><small>${ativos} ativo${ativos > 1 ? 's' : ''} • ${s.n} OS</small></span>
+    <span class="ab-n"><b>${abrigoNome(gr)}</b><small>${ativos} ativo${ativos > 1 ? 's' : ''} • ${s.n} OS</small></span>
     <span class="ab-prog" title="${pct}% executado"><i style="width:${pct}%"></i></span>
     <span class="gcount${s.done === s.n ? ' done' : ''}">${s.done}/${s.n}</span><button type="button" class="tg" aria-label="${open ? 'Recolher' : 'Expandir'}" aria-expanded="${open}">${ICON('down')}</button></div>
     ${open ? `<div class="grp-b${temSub ? ' has-sub' : ''}">${body}</div>` : `<div class="tsum">${resumo}</div>`}</div>`;
@@ -420,8 +442,9 @@ function toggleSub(key) { if (S.subClosed.has(key)) S.subClosed.delete(key); els
 $('#count').addEventListener('click', (e) => {
   const b = e.target.closest('[data-xp]'); if (!b) return;
   const gs = new Set(S.filtered.map(gk));
-  if (b.dataset.xp === '1') gs.forEach((g) => S.open.add(g)); else gs.forEach((g) => S.open.delete(g));
-  S.subClosed.clear(); saveOpen(); renderList(true);
+  const ps = new Set(S.filtered.map(pk));
+  if (b.dataset.xp === '1') { gs.forEach((g) => S.open.add(g)); ps.forEach((p) => S.openP.add(p)); } else { gs.forEach((g) => S.open.delete(g)); ps.forEach((p) => S.openP.delete(p)); }
+  S.subClosed.clear(); saveOpen(); ls.set('ptOpen', [...S.openP]); renderList();
 });
 function updGroupHead(el) {
   const s = groupStats(el.dataset.g); const cb = $('.grp-h .cb', el);
@@ -442,6 +465,12 @@ $('#list').addEventListener('pointerdown', (e) => {
 addEventListener('scroll', () => clearTimeout(pressT), { passive: true });
 $('#list').addEventListener('click', (e) => {
   if (pressed) { pressed = false; return; }
+  const ph = e.target.closest('.pt-h');
+  if (ph) {
+    if (e.target.closest('.tg') || !S.selecting) return togglePatio(ph.dataset.ph);
+    const ks = S.filtered.filter((r) => r.patio === ph.dataset.ph).map((r) => r.k);
+    toggleSel(ks, !ks.every((k) => S.sel.has(k))); return;
+  }
   const gh = e.target.closest('.grp-h'); const sh = e.target.closest('.sub-h'); const ah = e.target.closest('.ativo-h');
   const tg = e.target.closest('.tg');
   // cabeçalho do abrigo / do card (sinaleiros, MCH…): recolhe/expande; no modo seleção, marca todas as OS
@@ -465,13 +494,14 @@ function toggleSel(ks, force) {
     const on = S.sel.has(k); el.classList.toggle('sel', on); $('.cb', el).classList.toggle('on', on);
   }
   new Set(ks.map((k) => { const r = S.byK.get(k); return r && gk(r); })).forEach((g) => { const el = $(`.grp[data-g="${CSS.escape(g)}"]`); el && updGroupHead(el); });
+  new Set(ks.map((k) => S.byK.get(k)?.patio)).forEach((p) => p && updPatioHead(p));
   updSelbar();
 }
 function setSelecting(on) {
   S.selecting = on; if (!on) S.sel.clear();
   $('#selToggle').setAttribute('aria-pressed', String(on));
   $('#list').classList.toggle('selecting', on);
-  if (!on) { $$('#list .it.sel').forEach((el) => { el.classList.remove('sel'); $('.cb', el).classList.remove('on'); }); $$('#list .grp').forEach(updGroupHead); }
+  if (!on) { $$('#list .it.sel').forEach((el) => { el.classList.remove('sel'); $('.cb', el).classList.remove('on'); }); $$('#list .grp').forEach(updGroupHead); $$('#list .pt').forEach((el) => updPatioHead(el.dataset.p)); }
   $('#selbar').hidden = !(on && S.tab === 'ciclica'); updSelbar();
 }
 function updSelbar() { $('#selN').textContent = S.sel.size; $('#selFill').disabled = !S.sel.size; }
@@ -890,7 +920,7 @@ $('#rXlsx').addEventListener('click', async () => {
     ['PÁTIO', 'ATIVO', 'OS', 'SERVIÇO', 'DESCRIÇÃO', 'SEGURANÇA', 'OK', 'H INÍCIO', 'H FIM', 'MANUT. IMEDIATA', 'NECESSIDADE', 'COLABORADORES', 'MATRÍCULAS', 'EQUIPE']];
   const headRow = rows.length - 1;
   for (const { r, f } of items) { const t = tokensOf(f); rows.push([r.patio, r.ativo, r.os, r.servico, r.desc, isSeg(r) ? 'SIM' : '', f.ok, f.hIni || '', f.hFim || '', f.imediata || '', f.necessidade || '', t.map((c) => c.n).join(', '), t.map((c) => c.m || '-').join(', '), f.equipe || '']); }
-  const { simpleXlsx } = await import('./xlsx.js?v=10');
+  const { simpleXlsx } = await import('./xlsx.js?v=11');
   const bytes = await simpleXlsx(JSZip, [{ name: 'Relatório ' + brDate(R.dia).replace(/\//g, '-'), rows, head: [headRow], title: [0], widths: [10, 26, 12, 50, 36, 11, 12, 9, 9, 10, 11, 30, 22, 9] }]);
   download(bytes, repFileBase() + '.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   toast('Relatório baixado ✔');

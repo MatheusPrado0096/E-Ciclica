@@ -836,3 +836,31 @@ button.kpi:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
 .list:not(.selecting) .sub-h .cb{display:none}
 .grp.abrigo .sub .it{padding-left:20px}
 .list.selecting .grp.abrigo .sub .it{padding-left:14px}
+
+/* v6 — card do PÁTIO por fora dos abrigos */
+.pt{border-radius:24px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow);overflow:hidden;animation:panelIn .4s var(--ease) both}
+.pt-h{display:flex;align-items:center;gap:12px;padding:14px 14px 14px 16px;cursor:pointer;user-select:none;background:linear-gradient(135deg,#00335e,#00264a);color:#fff}
+.pt-h .cb{border-color:rgba(255,255,255,.6)}
+.pt-h .cb.on{background:var(--yellow);border-color:var(--yellow);color:#14202e}
+.list:not(.selecting) .pt-h .cb{display:none}
+.pt-ic{flex:none;width:40px;height:40px;border-radius:13px;display:grid;place-items:center;background:var(--yellow);color:#14202e}
+.pt-ic .ic{width:20px;height:20px}
+.pt-n{display:flex;flex-direction:column;min-width:0;line-height:1.1;margin-right:auto}
+.pt-n b{font-size:1.25rem;font-weight:800;letter-spacing:-.02em}
+.pt-n small{font-size:.76rem;opacity:.75;font-weight:600}
+.pt-prog{flex:none;width:90px;height:8px;border-radius:999px;background:rgba(255,255,255,.18);overflow:hidden}
+.pt-prog i{display:block;height:100%;background:linear-gradient(90deg,#2fd27f,#43e69a);border-radius:999px}
+.pt-h .gcount{font-weight:800;font-size:.86rem;color:#fff;font-variant-numeric:tabular-nums;margin-left:0}
+.pt-h .gcount.done{color:#43e69a}
+.pt-h .tg{color:#fff}
+.pt-h .tg:hover{background:rgba(255,255,255,.12)}
+.pt.closed > .pt-h .tg .ic{transform:rotate(-90deg)}
+.asum{display:flex;flex-wrap:wrap;gap:6px;padding:12px 14px 14px}
+.achip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:9px;font-size:.76rem;font-weight:800;background:var(--gc);color:#14202e;border:1px solid color-mix(in srgb,#000 8%,transparent)}
+.achip b{font-weight:700;opacity:.8;font-variant-numeric:tabular-nums}
+.achip.none{background:var(--surface-2);color:var(--muted);border-style:dashed}
+.achip.none b{color:var(--text)}
+.pt-b{display:flex;flex-direction:column;gap:12px;padding:12px;background:color-mix(in srgb,var(--navy) 4%,var(--surface))}
+:root[data-theme=dark] .pt-b{background:var(--surface-2)}
+.pt-b .grp{animation:none}
+@media(max-width:720px){.pt-prog{display:none}.pt-n b{font-size:1.1rem}.pt-b{padding:8px}}
